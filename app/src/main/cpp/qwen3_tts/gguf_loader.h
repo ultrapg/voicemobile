@@ -1,0 +1,102 @@
+#pragma once
+
+#include "ggml.h"
+#include "ggml-backend.h"
+#include "gguf.h"
+
+#include <string>
+#include <map>
+#include <vector>
+#include <memory>
+#include <cstdint>
+
+namespace qwen3_tts {
+
+enum class backend_preference {
+    auto_select = 0, // Qualcomm Hexagon HTP NPU -> Adreno OpenCL GPU -> ARM64 CPU
+    cpu = 1,         // ARM64 NEON / FP16 / DotProd / I8MM CPU
+    cuda = 2,        // GPU alias (Qualcomm Adreno OpenCL / Vulkan GPU)
+    npu = 3,         // Qualcomm Snapdragon Hexagon HTP NPU (HVX / HMX)
+};
+
+struct hardware_backend_status {
+    bool cpu_available = true;
+    bool gpu_available = false;
+    bool npu_available = false;
+    std::string cpu_description;
+    std::string gpu_description;
+    std::string npu_description;
+    std::string active_backend_name;
+    std::string active_backend_description;
+    bool fallback_active = false;
+};
+
+// Initialize and probe GGML dynamic backends (CPU, Qualcomm Hexagon HTP NPU, Qualcomm Adreno OpenCL GPU)
+void ensure_backends_registered(const std::string & native_lib_dir = "");
+hardware_backend_status query_hardware_backend_status();
+
+// Cancellation support for mid-pass mobile abort
+void set_synthesis_cancelled(bool cancelled);
+bool is_synthesis_cancelled();
+
+// Generic GGUF model loader class
+class GGUFLoader {
+public:
+    GGUFLoader();
+    ~GGUFLoader();
+
+    bool open(const std::string & path);
+    void close();
+
+    const std::string & get_error() const { return error_msg_; }
+    int64_t get_n_tensors() const;
+    const char * get_tensor_name(int64_t idx) const;
+    enum ggml_type get_tensor_type(int64_t idx) const;
+    size_t get_tensor_offset(int64_t idx) const;
+    size_t get_tensor_size(int64_t idx) const;
+
+    int32_t get_u32(const char * key, int32_t default_val = 0) const;
+    float get_f32(const char * key, float default_val = 0.0f) const;
+    size_t get_data_offset() const;
+
+    struct gguf_context * get_ctx() const { return ctx_; }
+    struct ggml_context * get_meta_ctx() const { return meta_ctx_; }
+
+protected:
+    struct gguf_context * ctx_ = nullptr;
+    struct ggml_context * meta_ctx_ = nullptr;
+    std::string error_msg_;
+    std::string file_path_;
+};
+
+// Helper function to allocate and load tensor data from GGUF file
+bool load_tensor_data_from_file(
+    const std::string & path,
+    struct gguf_context * ctx,
+    struct ggml_context * model_ctx,
+    const std::map<std::string, struct ggml_tensor *> & tensors,
+    ggml_backend_buffer_t & buffer,
+    std::string & error_msg,
+    enum ggml_backend_dev_type preferred_backend_type = GGML_BACKEND_DEVICE_TYPE_CPU
+);
+
+// Helper to initialize backend with NPU/GPU/CPU preference and safe fallback
+ggml_backend_t init_preferred_backend(const char * component_name, std::string * error_msg);
+ggml_backend_t init_dedicated_preferred_backend(const char * component_name, std::string * error_msg);
+ggml_backend_t init_cpu_backend(const char * component_name, std::string * error_msg);
+void release_preferred_backend(ggml_backend_t backend);
+bool set_backend_preference(backend_preference preference);
+backend_preference get_backend_preference();
+int32_t default_cpu_thread_count();
+int32_t default_parallel_thread_count();
+bool set_cpu_thread_count(int32_t n_threads, bool explicit_value = true);
+int32_t get_cpu_thread_count();
+bool cpu_thread_count_is_explicit();
+enum ggml_backend_dev_type get_preferred_backend_type();
+int32_t get_compiled_backend_mask();
+std::string get_active_backend_name();
+
+// Helper function to free model resources
+void free_ggml_resources(struct ggml_context * ctx, ggml_backend_buffer_t buffer);
+
+} // namespace qwen3_tts

@@ -1,0 +1,24 @@
+# Gradle & Android Studio
+.gradle/
+build/
+app/build/
+app/.cxx/
+.cxx/
+.idea/
+*.iml
+local.properties
+captures/
+.externalNativeBuild/
+
+# Signing keys (NEVER commit)
+*.jks
+*.keystore
+*.p12
+*.pem
+release.properties
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*~
+*.swp

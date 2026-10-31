@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <files-path name="generated_audio" path="audio/" />
+    <files-path name="voice_profiles" path="profiles/" />
+    <cache-path name="shared_cache" path="." />
+</paths>
