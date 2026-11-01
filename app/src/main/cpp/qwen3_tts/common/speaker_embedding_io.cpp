@@ -18,13 +18,29 @@ static std::string to_lower_ascii(std::string s) {
     return s;
 }
 
-static bool has_json_extension(const std::string & path) {
+static bool has_extension_ci(const std::string & path, const char * target_ext) {
     const size_t pos = path.find_last_of('.');
     if (pos == std::string::npos) {
         return false;
     }
     const std::string ext = to_lower_ascii(path.substr(pos));
-    return ext == ".json";
+    return ext == target_ext;
+}
+
+static bool has_json_extension(const std::string & path) {
+    return has_extension_ci(path, ".json");
+}
+
+static bool is_likely_ascii_text(const std::string & data) {
+    for (unsigned char c : data) {
+        if (c == '\n' || c == '\r' || c == '\t') {
+            continue;
+        }
+        if (c < 0x20 || c > 0x7E) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static bool parse_embedding_text(const std::string & text, std::vector<float> & embedding) {
@@ -41,7 +57,8 @@ static bool parse_embedding_text(const std::string & text, std::vector<float> & 
     while (iss >> value) {
         embedding.push_back(value);
     }
-    return !embedding.empty();
+    iss >> std::ws;
+    return !embedding.empty() && iss.eof();
 }
 
 bool load_speaker_embedding_file(const std::string & path,
@@ -59,7 +76,8 @@ bool load_speaker_embedding_file(const std::string & path,
         return false;
     }
 
-    if (has_json_extension(path) || data.find('[') != std::string::npos) {
+    const bool force_binary = has_extension_ci(path, ".bin");
+    if (!force_binary && (has_json_extension(path) || is_likely_ascii_text(data))) {
         if (!parse_embedding_text(data, embedding)) {
             fprintf(stderr, "ERROR: Failed to parse speaker embedding JSON/text: %s\n", path.c_str());
             return false;

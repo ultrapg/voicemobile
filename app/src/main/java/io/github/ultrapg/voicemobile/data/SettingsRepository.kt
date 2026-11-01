@@ -22,7 +22,7 @@ private val Context.voiceDataStore by preferencesDataStore(name = "voicemobile_s
  */
 data class AppSettings(
     val activeMode: SynthesisMode = SynthesisMode.SPEAK,
-    val preset: ModelPreset = ModelPreset.TINY_06B_Q4,
+    val preset: ModelPreset = ModelPreset.FAST_06B_Q8,
     val customStyleModel: String = "",
     val customCloneModel: String = "",
     val customSpeakModel: String = "",
@@ -41,7 +41,7 @@ data class AppSettings(
     val chunkMode: ChunkMode = ChunkMode.AUTO,
     val chunkSizeChars: Int = 600,
     val streamingMode: Boolean = false,
-    val streamChunkSec: Float = 1.0f,
+    val streamChunkSec: Float = 0.40f,
     val autoPlayOutput: Boolean = true,
     val temperature: Float = 0.9f,
     val topP: Float = 1.0f,
@@ -61,6 +61,9 @@ data class AppSettings(
 
     fun effectiveCodecFileName(): String =
         customCodecModel.ifBlank { preset.codecModelFile }
+
+    val supportsSpeakInstruction: Boolean
+        get() = !effectiveTalkerFileName(SynthesisMode.SPEAK).contains("0.6b", ignoreCase = true)
 }
 
 class SettingsRepository(private val context: Context) {
@@ -99,7 +102,7 @@ class SettingsRepository(private val context: Context) {
     val settingsFlow: Flow<AppSettings> = context.voiceDataStore.data.map { p ->
         AppSettings(
             activeMode = SynthesisMode.fromId(p[Keys.ACTIVE_MODE] ?: SynthesisMode.SPEAK.id),
-            preset = ModelPreset.fromId(p[Keys.PRESET] ?: ModelPreset.TINY_06B_Q4.id),
+            preset = ModelPreset.fromId(p[Keys.PRESET] ?: ModelPreset.FAST_06B_Q8.id),
             customStyleModel = p[Keys.CUSTOM_STYLE].orEmpty(),
             customCloneModel = p[Keys.CUSTOM_CLONE].orEmpty(),
             customSpeakModel = p[Keys.CUSTOM_SPEAK].orEmpty(),
@@ -118,7 +121,7 @@ class SettingsRepository(private val context: Context) {
             chunkMode = ChunkMode.fromId(p[Keys.CHUNK_MODE] ?: ChunkMode.AUTO.id),
             chunkSizeChars = (p[Keys.CHUNK_SIZE] ?: 600).coerceIn(150, 1800),
             streamingMode = p[Keys.STREAMING] ?: false,
-            streamChunkSec = (p[Keys.STREAM_CHUNK_SEC] ?: 1.0f).coerceIn(0.3f, 2.5f),
+            streamChunkSec = (p[Keys.STREAM_CHUNK_SEC] ?: 0.40f).coerceIn(0.25f, 2.5f),
             autoPlayOutput = p[Keys.AUTO_PLAY] ?: true,
             temperature = (p[Keys.TEMPERATURE] ?: 0.9f).coerceIn(0.0f, 1.5f),
             topP = (p[Keys.TOP_P] ?: 1.0f).coerceIn(0.1f, 1.0f),
@@ -133,7 +136,7 @@ class SettingsRepository(private val context: Context) {
         context.voiceDataStore.edit { prefs ->
             val current = AppSettings(
                 activeMode = SynthesisMode.fromId(prefs[Keys.ACTIVE_MODE] ?: SynthesisMode.SPEAK.id),
-                preset = ModelPreset.fromId(prefs[Keys.PRESET] ?: ModelPreset.TINY_06B_Q4.id),
+                preset = ModelPreset.fromId(prefs[Keys.PRESET] ?: ModelPreset.FAST_06B_Q8.id),
                 customStyleModel = prefs[Keys.CUSTOM_STYLE].orEmpty(),
                 customCloneModel = prefs[Keys.CUSTOM_CLONE].orEmpty(),
                 customSpeakModel = prefs[Keys.CUSTOM_SPEAK].orEmpty(),
@@ -152,7 +155,7 @@ class SettingsRepository(private val context: Context) {
                 chunkMode = ChunkMode.fromId(prefs[Keys.CHUNK_MODE] ?: ChunkMode.AUTO.id),
                 chunkSizeChars = prefs[Keys.CHUNK_SIZE] ?: 600,
                 streamingMode = prefs[Keys.STREAMING] ?: false,
-                streamChunkSec = prefs[Keys.STREAM_CHUNK_SEC] ?: 1.0f,
+                streamChunkSec = prefs[Keys.STREAM_CHUNK_SEC] ?: 0.40f,
                 autoPlayOutput = prefs[Keys.AUTO_PLAY] ?: true,
                 temperature = prefs[Keys.TEMPERATURE] ?: 0.9f,
                 topP = prefs[Keys.TOP_P] ?: 1.0f,

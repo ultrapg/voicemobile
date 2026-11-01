@@ -14,25 +14,25 @@ enum class ModelPreset(
     val speakModelFile: String,
     val codecModelFile: String
 ) {
+    FAST_06B_Q8(
+        id = "0.6b",
+        title = "Balanced Fast (0.6B Q8)",
+        badge = "Recommended",
+        summary = "Crisp 8-bit 0.6B Q8_0 for Clone & Speak (~1.2 GB to start), 1.7B Q8_0 for Design",
+        styleModelFile = "qwen-talker-1.7b-voicedesign-Q8_0.gguf",
+        cloneModelFile = "qwen-talker-0.6b-base-Q8_0.gguf",
+        speakModelFile = "qwen-talker-0.6b-customvoice-Q8_0.gguf",
+        codecModelFile = "qwen-tokenizer-12hz-Q8_0.gguf"
+    ),
     TINY_06B_Q4(
         id = "0.6b-q4",
-        title = "Mobile Fast (0.6B Q4)",
-        badge = "Recommended",
-        summary = "Fastest NPU/GPU inference & smallest footprint (~850 MB to start)",
+        title = "Ultra Compact (0.6B Q4)",
+        badge = "0.6B Q4",
+        summary = "Smallest footprint (~850 MB to start) with 4-bit quantization",
         styleModelFile = "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf",
         cloneModelFile = "qwen-talker-0.6b-base-Q4_K_M.gguf",
         speakModelFile = "qwen-talker-0.6b-customvoice-Q4_K_M.gguf",
         codecModelFile = "qwen-tokenizer-12hz-Q8_0.gguf"
-    ),
-    FAST_06B_Q8(
-        id = "0.6b",
-        title = "Balanced Fast (0.6B Q8)",
-        badge = "8-bit",
-        summary = "Near-lossless 0.6B Q8_0 for Clone & Speak, 1.7B Q8_0 for Design",
-        styleModelFile = "qwen-talker-1.7b-voicedesign-Q8_0.gguf",
-        cloneModelFile = "qwen-talker-0.6b-base-Q8_0.gguf",
-        speakModelFile = "qwen-talker-0.6b-customvoice-Q8_0.gguf",
-        codecModelFile = "qwen-tokenizer-12hz-BF16.gguf"
     ),
     FULL_17B_Q4(
         id = "q4",
@@ -94,7 +94,7 @@ enum class ModelPreset(
                 it.id.equals(id, ignoreCase = true) ||
                     (id.equals("tiny", ignoreCase = true) && it == TINY_06B_Q4) ||
                     (id.equals("fast", ignoreCase = true) && it == FAST_06B_Q8)
-            } ?: TINY_06B_Q4
+            } ?: FAST_06B_Q8
     }
 }
 
@@ -162,6 +162,11 @@ object ModelsCatalog {
 
     fun isValidGgufFile(file: File): Boolean {
         if (!file.exists() || !file.isFile || file.length() < 64L) return false
+        val spec = KNOWN_SPECS[file.name]
+        if (spec != null && spec.approxSizeMb > 0) {
+            val minPlausibleBytes = spec.approxSizeMb.toLong() * 750_000L
+            if (file.length() < minPlausibleBytes) return false
+        }
         return runCatching {
             RandomAccessFile(file, "r").use { raf ->
                 val b0 = raf.read()

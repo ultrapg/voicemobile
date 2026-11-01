@@ -20,7 +20,7 @@ void AudioTokenizerEncoder::unload_model() {
         state.sched = nullptr;
     }
     if (state.backend) {
-        release_preferred_backend(state.backend);
+        ggml_backend_free(state.backend);
         state.backend = nullptr;
     }
     if (state.backend_cpu) {

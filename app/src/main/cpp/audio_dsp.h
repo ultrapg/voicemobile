@@ -16,6 +16,34 @@ std::vector<float> sola_time_stretch(
     float speed
 );
 
+// Stateful streaming time-stretcher & soft peak limiter for live audio chunks.
+// At speed == 1.0x, passes samples through with zero phase latency and soft-clip protection.
+// At speed != 1.0x, maintains continuous overlap-add state across chunk boundaries.
+class StreamingSpeedStretcher {
+public:
+    StreamingSpeedStretcher(int sample_rate = 24000, float speed = 1.0f);
+
+    void reset(int sample_rate, float speed);
+    void ensure_sample_rate(int sample_rate);
+    void process(const float * samples, size_t n_samples, std::vector<float> & out);
+    void flush(std::vector<float> & out);
+
+private:
+    int sample_rate_ = 24000;
+    float speed_ = 1.0f;
+    int synth_hop_ = 480;
+    int win_len_ = 960;
+    int overlap_ = 480;
+    int search_len_ = 360;
+    double ana_hop_ = 480.0;
+    double ana_pos_ = 0.0;
+    bool started_ = false;
+    std::vector<float> fade_in_;
+    std::vector<float> fade_out_;
+    std::vector<float> input_buf_;
+    std::vector<float> tail_overlap_;
+};
+
 // Remove DC offset and normalize peak amplitude to target_peak (~0.944 = -0.5 dBFS).
 void normalize_audio_peak(
     std::vector<float> & samples,

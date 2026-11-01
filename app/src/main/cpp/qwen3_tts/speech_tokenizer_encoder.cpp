@@ -522,6 +522,8 @@ void SpeechTokenizerEncoder::unload_model() {
 }
 
 bool SpeechTokenizerEncoder::load_model(const std::string & tokenizer_model_path, bool force_cpu) {
+    (void) force_cpu;
+    force_cpu = true;
     unload_model();
 
     GGUFLoader loader;

@@ -9,6 +9,233 @@ namespace voicemobile {
 
 namespace {
 constexpr float kPi = 3.14159265358979323846f;
+
+inline float sanitize_sample(float s) {
+    return std::isfinite(s) ? s : 0.0f;
+}
+
+inline float soft_limit_sample(float s) {
+    if (!std::isfinite(s)) {
+        return 0.0f;
+    }
+    const float ax = std::fabs(s);
+    if (ax <= 0.90f) {
+        return s;
+    }
+    // Smooth knee above 0.90 to ceiling ~0.995 without harsh digital clipping
+    const float excess = (ax - 0.90f) / 0.095f;
+    const float limited = 0.90f + 0.095f * std::tanh(excess);
+    return s >= 0.0f ? limited : -limited;
+}
+}
+
+StreamingSpeedStretcher::StreamingSpeedStretcher(int sample_rate, float speed) {
+    reset(sample_rate, speed);
+}
+
+void StreamingSpeedStretcher::reset(int sample_rate, float speed) {
+    sample_rate_ = sample_rate > 0 ? sample_rate : 24000;
+    speed_ = std::clamp(speed, 0.25f, 3.0f);
+    synth_hop_ = std::max(32, (sample_rate_ * 20) / 1000); // 20ms hop
+    win_len_ = synth_hop_ * 2;                             // 40ms window (exact 50% overlap)
+    overlap_ = synth_hop_;
+    search_len_ = std::max(16, (sample_rate_ * 15) / 1000); // 15ms correlation search
+    ana_hop_ = (double) synth_hop_ * (double) speed_;
+    ana_pos_ = 0.0;
+    started_ = false;
+    input_buf_.clear();
+    tail_overlap_.clear();
+
+    fade_in_.resize((size_t) overlap_);
+    fade_out_.resize((size_t) overlap_);
+    for (int i = 0; i < overlap_; ++i) {
+        const float t = (float) i / (float) overlap_;
+        fade_in_[(size_t) i] = 0.5f * (1.0f - std::cos(kPi * t));
+        fade_out_[(size_t) i] = 1.0f - fade_in_[(size_t) i];
+    }
+}
+
+void StreamingSpeedStretcher::ensure_sample_rate(int sample_rate) {
+    const int sr = sample_rate > 0 ? sample_rate : 24000;
+    if (sr != sample_rate_ && !started_ && input_buf_.empty()) {
+        reset(sr, speed_);
+    }
+}
+
+void StreamingSpeedStretcher::process(const float * samples, size_t n_samples, std::vector<float> & out) {
+    out.clear();
+    if (!samples || n_samples == 0) {
+        return;
+    }
+
+    if (std::fabs(speed_ - 1.0f) < 0.005f) {
+        out.resize(n_samples);
+        for (size_t i = 0; i < n_samples; ++i) {
+            out[i] = soft_limit_sample(samples[i]);
+        }
+        return;
+    }
+
+    const size_t old_in = input_buf_.size();
+    input_buf_.resize(old_in + n_samples);
+    for (size_t i = 0; i < n_samples; ++i) {
+        input_buf_[old_in + i] = sanitize_sample(samples[i]);
+    }
+
+    if (!started_) {
+        if ((int) input_buf_.size() < win_len_) {
+            return;
+        }
+        out.insert(out.end(), input_buf_.begin(), input_buf_.begin() + synth_hop_);
+        tail_overlap_.assign(input_buf_.begin() + synth_hop_, input_buf_.begin() + win_len_);
+        ana_pos_ = ana_hop_;
+        started_ = true;
+    }
+
+    while (true) {
+        const int center = (int) std::llround(ana_pos_);
+        if (center + win_len_ + search_len_ > (int) input_buf_.size()) {
+            break;
+        }
+
+        const int min_k = std::max(-search_len_, -center);
+        const int max_k = std::min(search_len_, (int) input_buf_.size() - win_len_ - center);
+
+        double tail_energy = 0.0;
+        for (int i = 0; i < overlap_; ++i) {
+            const double tv = (double) tail_overlap_[(size_t) i];
+            tail_energy += tv * tv;
+        }
+
+        int best_k = 0;
+        if (tail_energy > 1e-9) {
+            double best_score = -1e30;
+            for (int k = min_k; k <= max_k; ++k) {
+                const float * cptr = input_buf_.data() + (center + k);
+                double cand_energy = 0.0;
+                double dot = 0.0;
+                for (int i = 0; i < overlap_; ++i) {
+                    const double cv = (double) cptr[i];
+                    cand_energy += cv * cv;
+                    dot += (double) tail_overlap_[(size_t) i] * cv;
+                }
+                if (cand_energy <= 1e-12) {
+                    continue;
+                }
+                const double score = dot / (std::sqrt(tail_energy * cand_energy) + 1e-12);
+                if (score > best_score) {
+                    best_score = score;
+                    best_k = k;
+                }
+            }
+        }
+
+        const float * chosen = input_buf_.data() + (center + best_k);
+        const size_t out_base = out.size();
+        out.resize(out_base + (size_t) overlap_);
+        for (int i = 0; i < overlap_; ++i) {
+            const float mixed =
+                tail_overlap_[(size_t) i] * fade_out_[(size_t) i] +
+                chosen[i] * fade_in_[(size_t) i];
+            out[out_base + (size_t) i] = soft_limit_sample(mixed);
+        }
+        std::memcpy(
+            tail_overlap_.data(),
+            chosen + overlap_,
+            (size_t) overlap_ * sizeof(float)
+        );
+
+        ana_pos_ += ana_hop_;
+    }
+
+    const int safe_drop = std::max(0, (int) std::floor(ana_pos_) - search_len_ - 4);
+    if (safe_drop > 0 && safe_drop <= (int) input_buf_.size()) {
+        input_buf_.erase(input_buf_.begin(), input_buf_.begin() + safe_drop);
+        ana_pos_ -= (double) safe_drop;
+    }
+
+    for (float & s : out) {
+        s = soft_limit_sample(s);
+    }
+}
+
+void StreamingSpeedStretcher::flush(std::vector<float> & out) {
+    out.clear();
+    if (std::fabs(speed_ - 1.0f) < 0.005f) {
+        return;
+    }
+    if (!started_) {
+        out.resize(input_buf_.size());
+        for (size_t i = 0; i < input_buf_.size(); ++i) {
+            out[i] = soft_limit_sample(input_buf_[i]);
+        }
+        input_buf_.clear();
+        return;
+    }
+
+    while (true) {
+        const int center = (int) std::llround(ana_pos_);
+        if (center < 0 || center + win_len_ > (int) input_buf_.size()) {
+            break;
+        }
+        const int min_k = std::max(-search_len_, -center);
+        const int max_k = std::min(search_len_, (int) input_buf_.size() - win_len_ - center);
+
+        double tail_energy = 0.0;
+        for (int i = 0; i < overlap_; ++i) {
+            const double tv = (double) tail_overlap_[(size_t) i];
+            tail_energy += tv * tv;
+        }
+
+        int best_k = 0;
+        if (tail_energy > 1e-9) {
+            double best_score = -1e30;
+            for (int k = min_k; k <= max_k; ++k) {
+                const float * cptr = input_buf_.data() + (center + k);
+                double cand_energy = 0.0;
+                double dot = 0.0;
+                for (int i = 0; i < overlap_; ++i) {
+                    const double cv = (double) cptr[i];
+                    cand_energy += cv * cv;
+                    dot += (double) tail_overlap_[(size_t) i] * cv;
+                }
+                if (cand_energy <= 1e-12) {
+                    continue;
+                }
+                const double score = dot / (std::sqrt(tail_energy * cand_energy) + 1e-12);
+                if (score > best_score) {
+                    best_score = score;
+                    best_k = k;
+                }
+            }
+        }
+
+        const float * chosen = input_buf_.data() + (center + best_k);
+        const size_t out_base = out.size();
+        out.resize(out_base + (size_t) overlap_);
+        for (int i = 0; i < overlap_; ++i) {
+            const float mixed =
+                tail_overlap_[(size_t) i] * fade_out_[(size_t) i] +
+                chosen[i] * fade_in_[(size_t) i];
+            out[out_base + (size_t) i] = soft_limit_sample(mixed);
+        }
+        std::memcpy(
+            tail_overlap_.data(),
+            chosen + overlap_,
+            (size_t) overlap_ * sizeof(float)
+        );
+
+        ana_pos_ += ana_hop_;
+    }
+
+    for (float s : tail_overlap_) {
+        out.push_back(soft_limit_sample(s));
+    }
+
+    input_buf_.clear();
+    tail_overlap_.clear();
+    ana_pos_ = 0.0;
+    started_ = false;
 }
 
 std::vector<float> sola_time_stretch(
@@ -135,9 +362,10 @@ void normalize_audio_peak(std::vector<float> & samples, float target_peak) {
         return;
     }
 
-    // Pass 1: Compute DC offset
+    // Pass 1: Sanitize non-finite values & compute DC offset
     double sum = 0.0;
-    for (float s : samples) {
+    for (float & s : samples) {
+        s = sanitize_sample(s);
         sum += (double) s;
     }
     const float dc = (float) (sum / (double) samples.size());
@@ -264,7 +492,7 @@ bool write_wav_pcm16(
     while (idx < n_samples) {
         const size_t count = std::min(kBlockSamples, n_samples - idx);
         for (size_t i = 0; i < count; ++i) {
-            float s = samples ? samples[idx + i] : 0.0f;
+            float s = samples ? sanitize_sample(samples[idx + i]) : 0.0f;
             if (s > 1.0f) s = 1.0f;
             if (s < -1.0f) s = -1.0f;
             const int32_t q = (int32_t) std::lrintf(s * 32767.0f);

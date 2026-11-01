@@ -1319,7 +1319,11 @@ tts_result pipeline_internal::ops::synthesize_internal(Qwen3TTS & self,
     int64_t t_tokenize_start = get_time_ms();
     std::vector<int32_t> text_tokens = self.tokenizer_.encode_for_tts(text);
     std::vector<int32_t> instruct_tokens;
-    if (!params.instruction.empty()) {
+    const bool allow_instruction = !params.instruction.empty() && self.get_model_capabilities().supports_instruction;
+    if (!params.instruction.empty() && !allow_instruction) {
+        fprintf(stderr, "  Ignoring instruction prompt (unsupported by loaded model)\n");
+    }
+    if (allow_instruction) {
         instruct_tokens = self.tokenizer_.encode_instruct(params.instruction);
     }
     std::vector<int32_t> reference_tokens;
@@ -1340,7 +1344,7 @@ tts_result pipeline_internal::ops::synthesize_internal(Qwen3TTS & self,
         result.error_msg = "Failed to tokenize text";
         return result;
     }
-    if (!params.instruction.empty() && instruct_tokens.empty()) {
+    if (allow_instruction && instruct_tokens.empty()) {
         result.error_msg = "Failed to tokenize instruction";
         return result;
     }
@@ -1417,29 +1421,29 @@ tts_result pipeline_internal::ops::synthesize_internal(Qwen3TTS & self,
     text_span_estimator stream_text_estimator;
     std::string stream_error;
     if (streaming) {
-        if (!self.streaming_decoder_loaded_) {
+        if (!self.decoder_loaded_) {
             int64_t t_decoder_load_start = get_time_ms();
             if (self.decoder_model_path_.empty()) {
                 result.error_msg = "Internal error: missing vocoder model path";
                 return result;
             }
-            if (!self.streaming_audio_decoder_.load_model_dedicated(self.decoder_model_path_)) {
-                result.error_msg = "Failed to load streaming vocoder: " + self.streaming_audio_decoder_.get_error();
+            if (!self.audio_decoder_.load_model(self.decoder_model_path_)) {
+                result.error_msg = "Failed to load streaming vocoder: " + self.audio_decoder_.get_error();
                 return result;
             }
-            self.streaming_decoder_loaded_ = true;
+            self.decoder_loaded_ = true;
             if (params.print_timing) {
                 fprintf(stderr, "  Vocoder lazy-loaded for streaming in %lld ms\n",
                         (long long) (get_time_ms() - t_decoder_load_start));
                 sample_memory("synth/after-vocoder-load");
             }
         }
-        const audio_decoder_config & decoder_cfg = self.streaming_audio_decoder_.get_config();
+        const audio_decoder_config & decoder_cfg = self.audio_decoder_.get_config();
         const int32_t chunk_frames = duration_sec_to_codec_frames(decoder_cfg, streaming_params->chunk_sec, 1);
         const int32_t left_context_frames =
             duration_sec_to_codec_frames(decoder_cfg, streaming_params->left_context_sec, 0);
         stream_text_estimator.reset(text, decoder_cfg.sample_rate);
-        if (!stream.init(&self.streaming_audio_decoder_, self.transformer_.get_config().n_codebooks,
+        if (!stream.init(&self.audio_decoder_, self.transformer_.get_config().n_codebooks,
                          chunk_frames, left_context_frames, on_audio_chunk,
                          streaming_params->collect_audio, &result.audio,
                          &stream_text_estimator, &stream_error)) {
@@ -1541,7 +1545,7 @@ tts_result pipeline_internal::ops::synthesize_internal(Qwen3TTS & self,
             }
         }
 
-        result.sample_rate = self.streaming_audio_decoder_.get_config().sample_rate;
+        result.sample_rate = self.audio_decoder_.get_config().sample_rate;
         result.t_decode_ms = stream.decode_ms();
         result.streaming_decode_chunks = stream.chunks();
         result.streaming_decode_input_frames = stream.decode_input_frames();
@@ -1558,8 +1562,8 @@ tts_result pipeline_internal::ops::synthesize_internal(Qwen3TTS & self,
             self.transformer_.unload_model();
             self.transformer_loaded_ = false;
             sample_memory("synth/after-transformer-unload");
-            self.streaming_audio_decoder_.unload_model();
-            self.streaming_decoder_loaded_ = false;
+            self.audio_decoder_.unload_model();
+            self.decoder_loaded_ = false;
             sample_memory("synth/after-vocoder-unload");
         }
 

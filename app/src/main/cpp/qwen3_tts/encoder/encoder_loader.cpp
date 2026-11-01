@@ -127,31 +127,20 @@ bool AudioTokenizerEncoder::load_model(const std::string & model_path) {
 
     if (!load_tensor_data_from_file(model_path, gguf_ctx, model.ctx,
                                     model.tensors, model.buffer, error_msg_,
-                                    get_preferred_backend_type())) {
+                                    GGML_BACKEND_DEVICE_TYPE_CPU)) {
         return false;
     }
 
-    state.backend = init_preferred_backend("AudioTokenizerEncoder", &error_msg_);
+    state.backend = init_cpu_backend("AudioTokenizerEncoder", &error_msg_);
     if (!state.backend) {
         return false;
     }
     ggml_backend_dev_t device = ggml_backend_get_device(state.backend);
-    const char * device_name = device ? ggml_backend_dev_name(device) : "Unknown";
+    const char * device_name = device ? ggml_backend_dev_name(device) : "CPU";
     fprintf(stderr, "  AudioTokenizerEncoder backend: %s\n", device_name);
-
-    if (device && ggml_backend_dev_type(device) != GGML_BACKEND_DEVICE_TYPE_CPU) {
-        state.backend_cpu = init_cpu_backend("AudioTokenizerEncoder fallback", &error_msg_);
-        if (!state.backend_cpu) {
-            error_msg_ = "Failed to initialize CPU fallback backend for AudioTokenizerEncoder";
-            return false;
-        }
-    }
 
     std::vector<ggml_backend_t> backends;
     backends.push_back(state.backend);
-    if (state.backend_cpu) {
-        backends.push_back(state.backend_cpu);
-    }
     state.sched = ggml_backend_sched_new(backends.data(), nullptr, (int) backends.size(),
                                          encoder_internal::QWEN3_TTS_ENC_MAX_NODES, false, true);
     if (!state.sched) {

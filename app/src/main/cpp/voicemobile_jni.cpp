@@ -470,6 +470,29 @@ Java_io_github_ultrapg_voicemobile_engine_VoiceEngineBridge_nativeSynthesizeChun
     stream_params.left_context_sec = 2.0f;
     stream_params.collect_audio = true;
 
+    voicemobile::StreamingSpeedStretcher stream_stretcher(24000, (float) stream_speed);
+    int last_stream_sr = 24000;
+
+    auto emit_pcm_to_java = [&](const float * pcm_ptr, size_t pcm_len, int sr) -> bool {
+        if (!pcm_ptr || pcm_len == 0) {
+            return true;
+        }
+        jfloatArray jpcm = env->NewFloatArray((jsize) pcm_len);
+        if (!jpcm) return false;
+        env->SetFloatArrayRegion(jpcm, 0, (jsize) pcm_len, pcm_ptr);
+        jboolean keep_going = env->CallBooleanMethod(
+            callback_obj,
+            mid_on_chunk,
+            jpcm,
+            (jint) sr
+        );
+        env->DeleteLocalRef(jpcm);
+        if (env->ExceptionCheck()) {
+            return false;
+        }
+        return keep_going == JNI_TRUE && !qwen3_tts::is_synthesis_cancelled();
+    };
+
     auto on_stream_chunk = [&](const qwen3_tts::tts_audio_chunk & chunk) -> bool {
         if (qwen3_tts::is_synthesis_cancelled() || env->ExceptionCheck()) {
             return false;
@@ -478,36 +501,16 @@ Java_io_github_ultrapg_voicemobile_engine_VoiceEngineBridge_nativeSynthesizeChun
             return true;
         }
 
-        const float * pcm_ptr = chunk.samples;
-        size_t pcm_len = (size_t) chunk.n_samples;
-        std::vector<float> stretched;
-        if (std::fabs((float) stream_speed - 1.0f) >= 0.01f) {
-            stretched = voicemobile::sola_time_stretch(
-                chunk.samples,
-                (size_t) chunk.n_samples,
-                chunk.sample_rate > 0 ? chunk.sample_rate : 24000,
-                (float) stream_speed
-            );
-            if (!stretched.empty()) {
-                pcm_ptr = stretched.data();
-                pcm_len = stretched.size();
-            }
-        }
+        const int sr = chunk.sample_rate > 0 ? chunk.sample_rate : 24000;
+        last_stream_sr = sr;
+        stream_stretcher.ensure_sample_rate(sr);
 
-        jfloatArray jpcm = env->NewFloatArray((jsize) pcm_len);
-        if (!jpcm) return false;
-        env->SetFloatArrayRegion(jpcm, 0, (jsize) pcm_len, pcm_ptr);
-        jboolean keep_going = env->CallBooleanMethod(
-            callback_obj,
-            mid_on_chunk,
-            jpcm,
-            (jint) (chunk.sample_rate > 0 ? chunk.sample_rate : 24000)
-        );
-        env->DeleteLocalRef(jpcm);
-        if (env->ExceptionCheck()) {
-            return false;
+        std::vector<float> processed;
+        stream_stretcher.process(chunk.samples, (size_t) chunk.n_samples, processed);
+        if (processed.empty()) {
+            return true;
         }
-        return keep_going == JNI_TRUE && !qwen3_tts::is_synthesis_cancelled();
+        return emit_pcm_to_java(processed.data(), processed.size(), sr);
     };
 
     // synth_mode:
@@ -535,20 +538,30 @@ Java_io_github_ultrapg_voicemobile_engine_VoiceEngineBridge_nativeSynthesizeChun
             : wrapper->tts.synthesize_with_speaker_embedding(text, embedding, params);
     } else if (synth_mode == 3) {
         qwen3_tts::icl_prompt prompt;
-        if (!qwen3_tts::load_icl_prompt_file(ref_path, prompt)) {
-            wrapper->last_error = "Failed to load Full-ICL voice profile: " + ref_path;
-            wrapper->tts.set_progress_callback(nullptr);
-            return nullptr;
+        if (qwen3_tts::load_icl_prompt_file(ref_path, prompt)) {
+            params.reference_text = prompt.reference_text;
+            params.reference_token_ids = prompt.reference_token_ids;
+            params.reference_codes = prompt.reference_codes;
+            stream_params.generation = params;
+            result = use_streaming
+                ? wrapper->tts.synthesize_with_speaker_embedding_streaming(
+                      text, prompt.speaker_embedding, on_stream_chunk, stream_params)
+                : wrapper->tts.synthesize_with_speaker_embedding(
+                      text, prompt.speaker_embedding, params);
+        } else {
+            // Also support speaker-embedding-only .json profiles exported by desktop voicecli
+            std::vector<float> embedding;
+            if (!qwen3_tts::load_speaker_embedding_file(ref_path, embedding)) {
+                wrapper->last_error = "Failed to load voice profile: " + ref_path;
+                wrapper->tts.set_progress_callback(nullptr);
+                return nullptr;
+            }
+            result = use_streaming
+                ? wrapper->tts.synthesize_with_speaker_embedding_streaming(
+                      text, embedding, on_stream_chunk, stream_params)
+                : wrapper->tts.synthesize_with_speaker_embedding(
+                      text, embedding, params);
         }
-        params.reference_text = prompt.reference_text;
-        params.reference_token_ids = prompt.reference_token_ids;
-        params.reference_codes = prompt.reference_codes;
-        stream_params.generation = params;
-        result = use_streaming
-            ? wrapper->tts.synthesize_with_speaker_embedding_streaming(
-                  text, prompt.speaker_embedding, on_stream_chunk, stream_params)
-            : wrapper->tts.synthesize_with_speaker_embedding(
-                  text, prompt.speaker_embedding, params);
     } else {
         wrapper->last_error = "Unsupported synthesis mode";
         wrapper->tts.set_progress_callback(nullptr);
@@ -556,6 +569,14 @@ Java_io_github_ultrapg_voicemobile_engine_VoiceEngineBridge_nativeSynthesizeChun
     }
 
     wrapper->tts.set_progress_callback(nullptr);
+
+    if (use_streaming && result.success && !qwen3_tts::is_synthesis_cancelled() && !env->ExceptionCheck()) {
+        std::vector<float> tail_pcm;
+        stream_stretcher.flush(tail_pcm);
+        if (!tail_pcm.empty()) {
+            emit_pcm_to_java(tail_pcm.data(), tail_pcm.size(), last_stream_sr);
+        }
+    }
 
     if (stats_out && env->GetArrayLength(stats_out) >= 4) {
         jlong buf[4] = {

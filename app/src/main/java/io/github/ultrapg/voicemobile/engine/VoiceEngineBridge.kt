@@ -41,7 +41,7 @@ data class SynthesisJobRequest(
     val speed: Float = 1.0f,
     val normalizePeak: Boolean = true,
     val streaming: Boolean = false,
-    val streamChunkSec: Float = 1.0f,
+    val streamChunkSec: Float = 0.40f,
     val temperature: Float = 0.9f,
     val topP: Float = 1.0f,
     val topK: Int = 50,
@@ -298,6 +298,16 @@ object VoiceEngineBridge {
                             "Synthesizing speech…"
                         }
                     )
+
+                    if (canStream && index > 0) {
+                        val pauseSamples = (sampleRate * 150) / 1000
+                        if (pauseSamples > 0) {
+                            val keepGoing = onLiveStreamPcm?.invoke(FloatArray(pauseSamples), sampleRate) ?: true
+                            if (!keepGoing) {
+                                error("Synthesis cancelled")
+                            }
+                        }
+                    }
 
                     val statsOut = LongArray(4)
                     val cb = object : NativeSynthCallback {

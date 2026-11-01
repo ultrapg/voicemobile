@@ -129,6 +129,9 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
+    private val _lastErrorMessage = MutableStateFlow<String?>(null)
+    val lastErrorMessage: StateFlow<String?> = _lastErrorMessage.asStateFlow()
+
     private val _isExtractingProfile = MutableStateFlow(false)
     val isExtractingProfile: StateFlow<Boolean> = _isExtractingProfile.asStateFlow()
 
@@ -137,6 +140,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     val micState: StateFlow<MicRecordingState> = micRecorder.state
 
     private var activeSynthJob: Job? = null
+    private var batchDownloadJob: Job? = null
     private val downloadJobs = mutableMapOf<String, Job>()
 
     val latestClip: StateFlow<GeneratedClipItem?> = combine(_clips, playbackState) { list, pb ->
@@ -168,8 +172,18 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         _snackbarMessage.value = null
     }
 
+    fun dismissError() {
+        _lastErrorMessage.value = null
+    }
+
     fun postMessage(msg: String) {
         _snackbarMessage.value = msg
+    }
+
+    private fun reportError(msg: String) {
+        val clean = msg.ifBlank { "Operation failed" }
+        _lastErrorMessage.value = clean
+        _snackbarMessage.value = clean
     }
 
     fun receiveSharedText(sharedText: String) {
@@ -374,6 +388,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
 
     fun downloadSingleModel(fileName: String) {
         if (downloadJobs[fileName]?.isActive == true) return
+        _lastErrorMessage.value = null
         val job = viewModelScope.launch {
             SynthesisService.startOrUpdate(appContext, "Downloading Model", fileName)
             try {
@@ -383,11 +398,11 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     refreshModelsInventory()
                     postMessage("Downloaded $fileName")
                 }.onFailure { err ->
-                    postMessage(err.message ?: "Download failed: $fileName")
+                    reportError(err.message ?: "Download failed: $fileName")
                 }
             } finally {
                 downloadJobs.remove(fileName)
-                if (downloadJobs.isEmpty() && !_synthState.value.isRunning) {
+                if (downloadJobs.isEmpty() && batchDownloadJob?.isActive != true && !_synthState.value.isRunning) {
                     SynthesisService.stop(appContext)
                 }
             }
@@ -400,16 +415,26 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
             onAllReady?.invoke()
             return
         }
-        viewModelScope.launch {
+        if (batchDownloadJob?.isActive == true) return
+        _lastErrorMessage.value = null
+        val job = viewModelScope.launch {
+            val currentJob = coroutineContext[Job]
             SynthesisService.startOrUpdate(appContext, "Downloading Models", files.first())
             try {
                 for (name in files.distinct()) {
-                    val res = downloadManager.downloadModel(name) { detail ->
-                        SynthesisService.startOrUpdate(appContext, "Downloading Qwen3-TTS", detail)
+                    if (currentJob != null) {
+                        downloadJobs[name] = currentJob
+                    }
+                    val res = try {
+                        downloadManager.downloadModel(name) { detail ->
+                            SynthesisService.startOrUpdate(appContext, "Downloading Qwen3-TTS", detail)
+                        }
+                    } finally {
+                        downloadJobs.remove(name)
                     }
                     refreshModelsInventory()
                     if (res.isFailure) {
-                        postMessage(res.exceptionOrNull()?.message ?: "Download failed: $name")
+                        reportError(res.exceptionOrNull()?.message ?: "Download failed: $name")
                         return@launch
                     }
                 }
@@ -420,15 +445,35 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     postMessage("All requested models are ready")
                 }
             } finally {
+                batchDownloadJob = null
                 if (downloadJobs.isEmpty() && !_synthState.value.isRunning) {
                     SynthesisService.stop(appContext)
                 }
             }
         }
+        batchDownloadJob = job
     }
 
     fun cancelDownload(fileName: String) {
-        downloadJobs.remove(fileName)?.cancel()
+        val job = downloadJobs.remove(fileName)
+        job?.cancel()
+        if (batchDownloadJob === job) {
+            batchDownloadJob = null
+        }
+        if (downloadJobs.isEmpty() && batchDownloadJob?.isActive != true && !_synthState.value.isRunning) {
+            SynthesisService.stop(appContext)
+        }
+    }
+
+    fun cancelAllDownloads() {
+        batchDownloadJob?.cancel()
+        batchDownloadJob = null
+        val jobs = downloadJobs.values.toList()
+        downloadJobs.clear()
+        jobs.forEach { it.cancel() }
+        if (!_synthState.value.isRunning) {
+            SynthesisService.stop(appContext)
+        }
     }
 
     fun deleteModel(fileName: String) {
@@ -506,6 +551,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         chunks: List<String>,
         selectedProfile: VoiceProfileItem?
     ) {
+        _lastErrorMessage.value = null
         activeSynthJob = viewModelScope.launch {
             val clipId = "clip_${System.currentTimeMillis()}"
             val outWavFile = File(voiceRepo.audioDir, "$clipId.wav")
@@ -572,10 +618,10 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     tokenizerModelPath = codecFile.absolutePath,
                     runtimeConfig = curSettings.toRuntimeConfig(),
                     outputWavPath = outWavFile.absolutePath,
-                    stylePrompt = if (curSettings.activeMode == SynthesisMode.DESIGN) {
-                        curDraft.stylePrompt
-                    } else {
-                        curDraft.speakInstruction
+                    stylePrompt = when (curSettings.activeMode) {
+                        SynthesisMode.DESIGN -> curDraft.stylePrompt
+                        SynthesisMode.SPEAK -> if (curSettings.supportsSpeakInstruction) curDraft.speakInstruction else ""
+                        SynthesisMode.CLONE -> ""
                     },
                     speakerName = curSettings.selectedSpeaker,
                     cloneRefWavPath = if (curDraft.cloneSourceKind == CloneSourceKind.AUDIO_OR_MIC) {
@@ -625,11 +671,12 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     } else null
                 )
 
-                if (useLiveStream) {
-                    playerManager.finishLiveStream()
-                }
-
                 result.onSuccess { res ->
+                    if (useLiveStream) {
+                        _synthState.update { it.copy(statusText = "Finishing live stream playback…") }
+                        playerManager.completeLiveStreamAndDrain()
+                    }
+
                     if (res.availableSpeakers.isNotEmpty()) {
                         _availableSpeakers.value = res.availableSpeakers
                     }
@@ -668,20 +715,26 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                         playerManager.playClip(clip.id, clip.title, clip.filePath)
                     }
                 }.onFailure { err ->
+                    if (useLiveStream) {
+                        playerManager.abortLiveStream()
+                    }
                     outWavFile.delete()
                     val msg = err.message.orEmpty()
                     if (!msg.contains("cancelled", ignoreCase = true)) {
-                        postMessage(msg.ifBlank { "Synthesis failed" })
+                        reportError(msg.ifBlank { "Synthesis failed" })
                     }
                 }
             } catch (_: CancellationException) {
+                if (useLiveStream) {
+                    playerManager.abortLiveStream()
+                }
                 outWavFile.delete()
             } finally {
                 if (useLiveStream) {
-                    playerManager.finishLiveStream()
+                    playerManager.abortLiveStream()
                 }
                 _synthState.value = ActiveSynthesisState(isRunning = false)
-                if (downloadJobs.isEmpty()) {
+                if (downloadJobs.isEmpty() && batchDownloadJob?.isActive != true) {
                     SynthesisService.stop(appContext)
                 }
             }
@@ -690,7 +743,8 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelSynthesis() {
         VoiceEngineBridge.cancelActiveSynthesis()
-        playerManager.finishLiveStream()
+        playerManager.abortLiveStream()
+        activeSynthJob?.cancel()
     }
 
     // --- Voice Profiles Lab (voicecli profile subcommand) ---
@@ -778,7 +832,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     postMessage("Extracted ${if (fullIcl) "Full-ICL (.json)" else "Speaker Embedding (.bin)"} profile")
                     onComplete()
                 }.onFailure { err ->
-                    postMessage(err.message ?: "Failed to extract voice profile")
+                    reportError(err.message ?: "Failed to extract voice profile")
                 }
             } finally {
                 _isExtractingProfile.value = false

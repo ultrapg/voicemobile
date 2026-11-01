@@ -71,15 +71,23 @@ class ModelDownloadManager(private val context: Context) {
             val conn = openRedirectingConnection(spec.downloadUrl, existingLen)
             try {
                 val code = conn.responseCode
+                if (code == 416 && existingLen > 0L) {
+                    partFile.delete()
+                    error("Partial download invalidated (HTTP 416) — tap Fetch again")
+                }
                 val isResume = (code == HttpURLConnection.HTTP_PARTIAL && existingLen > 0L)
                 if (code !in 200..299) {
                     error("HTTP $code downloading $fileName")
                 }
 
                 val contentLen = conn.contentLengthLong
-                val totalBytes = when {
+                val expectedExactBytes = when {
                     isResume && contentLen > 0L -> existingLen + contentLen
                     contentLen > 0L -> contentLen
+                    else -> -1L
+                }
+                val totalBytes = when {
+                    expectedExactBytes > 0L -> expectedExactBytes
                     spec.approxSizeMb > 0 -> spec.approxSizeMb.toLong() * 1024L * 1024L
                     else -> -1L
                 }
@@ -118,9 +126,18 @@ class ModelDownloadManager(private val context: Context) {
                     }
                 }
 
+                if (expectedExactBytes > 0L && partFile.length() != expectedExactBytes) {
+                    val gotMb = partFile.length() / (1024L * 1024L)
+                    val wantMb = expectedExactBytes / (1024L * 1024L)
+                    if (partFile.length() > expectedExactBytes) {
+                        partFile.delete()
+                    }
+                    error("Download incomplete ($gotMb / $wantMb MB) — tap Fetch to resume")
+                }
+
                 if (!ModelsCatalog.isValidGgufFile(partFile)) {
                     partFile.delete()
-                    error("Downloaded file failed GGUF header verification")
+                    error("Downloaded file failed GGUF verification")
                 }
 
                 if (targetFile.exists()) targetFile.delete()

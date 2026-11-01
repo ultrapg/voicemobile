@@ -106,6 +106,7 @@ fun SynthesizeScreen(
     profiles: List<VoiceProfileItem>,
     missingModels: List<String>,
     activeDownloads: Map<String, DownloadProgress>,
+    lastErrorMessage: String?,
     latestClip: GeneratedClipItem?,
     playbackState: PlaybackState,
     micRecorder: MicRecorder,
@@ -126,6 +127,8 @@ fun SynthesizeScreen(
     onUpdateSaveCloneProfileName: (String) -> Unit,
     onUpdateTuning: ((AppSettings) -> AppSettings) -> Unit,
     onPreDownloadMissing: (List<String>) -> Unit,
+    onCancelDownloads: () -> Unit,
+    onDismissError: () -> Unit,
     onSynthesize: () -> Unit,
     onCancelSynthesis: () -> Unit,
     onTogglePlayClip: (GeneratedClipItem) -> Unit,
@@ -346,6 +349,7 @@ fun SynthesizeScreen(
                         selectedSpeaker = settings.selectedSpeaker,
                         availableSpeakers = availableSpeakers,
                         speakInstruction = draft.speakInstruction,
+                        supportsInstruction = settings.supportsSpeakInstruction,
                         onSelectSpeaker = onSelectSpeaker,
                         onUpdateInstruction = onUpdateSpeakInstruction
                     )
@@ -407,12 +411,48 @@ fun SynthesizeScreen(
             )
         }
 
+        // Persistent Dismissible Error Banner (if last synthesis / download failed)
+        if (!lastErrorMessage.isNullOrBlank()) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = lastErrorMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = onDismissError,
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Dismiss error",
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+
         // Download / Missing Model Banner (only shown if needed or actively downloading)
         if (activeDownloads.isNotEmpty() || missingModels.isNotEmpty()) {
             ModelReadinessCard(
                 missingModels = missingModels,
                 activeDownloads = activeDownloads,
-                onDownloadNow = { onPreDownloadMissing(missingModels) }
+                onDownloadNow = { onPreDownloadMissing(missingModels) },
+                onCancelDownloads = onCancelDownloads
             )
         }
 
@@ -532,6 +572,7 @@ private fun SpeakModeSection(
     selectedSpeaker: String,
     availableSpeakers: List<String>,
     speakInstruction: String,
+    supportsInstruction: Boolean,
     onSelectSpeaker: (String) -> Unit,
     onUpdateInstruction: (String) -> Unit
 ) {
@@ -556,10 +597,14 @@ private fun SpeakModeSection(
     }
 
     OutlinedTextField(
-        value = speakInstruction,
+        value = if (supportsInstruction) speakInstruction else "",
         onValueChange = onUpdateInstruction,
+        enabled = supportsInstruction,
         label = { Text("Emotion / Delivery Instruction (Optional)") },
         placeholder = { Text("e.g. Speak softly with calm, thoughtful pacing") },
+        supportingText = if (!supportsInstruction) {
+            { Text("Emotion instructions require a 1.7B preset (0.6B uses pure speaker voice)") }
+        } else null,
         singleLine = true,
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth()
@@ -797,7 +842,8 @@ private fun DesignModeSection(
 private fun ModelReadinessCard(
     missingModels: List<String>,
     activeDownloads: Map<String, DownloadProgress>,
-    onDownloadNow: () -> Unit
+    onDownloadNow: () -> Unit,
+    onCancelDownloads: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(20.dp),
@@ -820,18 +866,28 @@ private fun ModelReadinessCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Downloading ${dl.fileName}",
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Downloading ${dl.fileName}",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = String.format(Locale.US, "%d/%d MB · %.1f MB/s", doneMb, totalMb, speedMb),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = String.format(Locale.US, "%d/%d MB · %.1f MB/s", doneMb, totalMb, speedMb),
-                        style = MaterialTheme.typography.labelSmall
-                    )
+                    TextButton(
+                        onClick = onCancelDownloads,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Cancel")
+                    }
                 }
                 LinearProgressIndicator(
                     progress = { dl.fraction },

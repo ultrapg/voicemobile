@@ -10,12 +10,13 @@ local.properties
 captures/
 .externalNativeBuild/
 
-# Signing keys (NEVER commit)
+# Signing keys & local APK artifacts (NEVER commit)
 *.jks
 *.keystore
 *.p12
 *.pem
 release.properties
+*.apk
 
 # OS / Editor
 .DS_Store

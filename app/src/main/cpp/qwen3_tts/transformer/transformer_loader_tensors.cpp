@@ -385,6 +385,7 @@ bool transformer_internal::ops::load_tensor_data(TTSTransformer & self, const st
         release_preferred_backend(backend);
         return false;
     }
+    ggml_backend_buffer_set_usage(impl->model.buffer, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
     FILE * f = fopen(path.c_str(), "rb");
     if (!f) {

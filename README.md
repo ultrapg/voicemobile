@@ -9,9 +9,9 @@ Zero cloud APIs, zero telemetry, zero command line — every synthesis mode, voi
 ## Highlights
 
 ### Heterogeneous On-Device Compute (`NPU` · `GPU` · `CPU` · `Auto`)
-- **Qualcomm Snapdragon Hexagon NPU (`libggml-hexagon.so`)**: Direct FastRPC CDSP offload (`libcdsprpc.so`) targeting Hexagon Tensor Processor **HVX** vector units and **HMX** matrix extensions across Snapdragon architectures (`v73`, `v75`, `v79`, `v81`, `v85` — Snapdragon 8 Gen 2, 8 Gen 3, 8s Gen 3/4, 8 Elite, and 8 Elite Gen 5), with configurable DCVS power profiles (*Sustained High*, *Burst*, *Balanced*, *Power Saver*).
-- **Mobile OpenCL GPU (`libggml-opencl.so`)**: Tiled Adreno & mobile OpenCL tensor kernels for both autoregressive talker generation and 12Hz ConvNeXt/upsampling audio decoding.
-- **ARM64 SIMD CPU (`libggml-cpu.so`)**: Multi-core ARMv8.2+ NEON, FP16, and DotProd execution with configurable thread count.
+- **Qualcomm Snapdragon Hexagon NPU (`libggml-hexagon.so`)**: Direct FastRPC CDSP offload (`libcdsprpc.so`) targeting Hexagon Tensor Processor **HVX** vector units and **HMX** tiled matrix extensions across Snapdragon architectures (`v73`, `v75`, `v79`, `v81`, `v85` — Snapdragon 8 Gen 2, 8 Gen 3, 8s Gen 3/4, 8 Elite, and 8 Elite Gen 5), with FP32 flash-attention accumulation, contiguous 2D KV-cache layout, and configurable DCVS power profiles (*Sustained High*, *Burst*, *Balanced*, *Power Saver*).
+- **Mobile OpenCL GPU (`libggml-opencl.so`)**: Tiled Adreno & mobile OpenCL tensor kernels for autoregressive talker & code-predictor generation.
+- **ARM64 SIMD CPU (`libggml-cpu.so`)**: Multi-core ARMv8.2+ NEON, FP16, and DotProd execution for full-CPU synthesis as well as dedicated Conv1D/ConvNeXt 12Hz audio vocoding and ECAPA-TDNN speaker encoding alongside NPU/GPU talker offload.
 - **Smart `Auto` Cascade & Safe Fallback**: Automatically probes `Hexagon NPU → OpenCL GPU → ARM64 CPU` via runtime `dlopen` so the app runs cleanly across Qualcomm Snapdragon flagships and non-Qualcomm ARM64 devices alike.
 
 ### Complete `voicecli` Feature Parity — Minimalistic Material Design 3 UI
@@ -24,8 +24,8 @@ Zero cloud APIs, zero telemetry, zero command line — every synthesis mode, voi
     - **Fast Embedding (`.bin`)**: Compact binary speaker embedding (`~4–8 KB`) for instant transcript-free cloning.
 - **Design (Natural-Language Voice Design)**: Create brand-new voices from acoustic text prompts (gender, timbre, warmth, pacing, accent) with one-tap studio presets.
 - **Live 24 kHz Streaming & Native Audio DSP**:
-  - Low-latency `AudioTrack` (`ENCODING_PCM_FLOAT`) streaming vocoder mode with configurable chunk window (`0.4s–2.4s`) and live **TTFA** / **RTF** metrics.
-  - Native C++ **O(1) prefix-sum SOLA** pitch-preserving time-stretcher (`0.25x–3.0x`), two-pass DC offset removal + `-0.5 dBFS` peak normalization, and `-45 dBFS` inter-chunk silence trimming with Hann crossfades.
+  - Asynchronous, underrun-free `AudioTrack` (`ENCODING_PCM_FLOAT`) stateful streaming vocoder pipeline with configurable chunk window (`0.25s–2.50s`), full hardware buffer draining, and live **TTFA** / **RTF** metrics.
+  - Native C++ **O(1) prefix-sum SOLA** pitch-preserving time-stretcher (`0.25x–3.0x`) for both batch and live streaming, smooth soft-knee peak limiting, two-pass DC offset removal + `-0.5 dBFS` peak normalization, and `-45 dBFS` inter-chunk silence trimming with Hann crossfades.
 - **Document & System Integration**:
   - Import `.txt` / `.md` files, strip Markdown/HTML/code blocks automatically, and split long articles with an abbreviation-, decimal-, ellipsis-, and CJK-aware linguistic sentence/clause chunker.
   - System-wide Android **Share** (`ACTION_SEND`) and **Text Selection** (`ACTION_PROCESS_TEXT`) targets so you can send text from any browser or reader straight into Voice Mobile.

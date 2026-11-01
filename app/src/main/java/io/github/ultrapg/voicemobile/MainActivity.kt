@@ -111,6 +111,7 @@ private fun VoiceMobileRoot(viewModel: VoiceViewModel) {
     val micState by viewModel.micState.collectAsStateWithLifecycle()
     val isExtractingProfile by viewModel.isExtractingProfile.collectAsStateWithLifecycle()
     val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
+    val lastErrorMessage by viewModel.lastErrorMessage.collectAsStateWithLifecycle()
 
     var pendingExport by remember { mutableStateOf<PendingExportRequest?>(null) }
 
@@ -228,6 +229,7 @@ private fun VoiceMobileRoot(viewModel: VoiceViewModel) {
                     profiles = profiles,
                     missingModels = missingModels,
                     activeDownloads = activeDownloads,
+                    lastErrorMessage = lastErrorMessage,
                     latestClip = latestClip,
                     playbackState = playbackState,
                     micRecorder = viewModel.micRecorder,
@@ -251,6 +253,8 @@ private fun VoiceMobileRoot(viewModel: VoiceViewModel) {
                         ensureForegroundNotifReady()
                         viewModel.downloadFilesSequential(list)
                     },
+                    onCancelDownloads = viewModel::cancelAllDownloads,
+                    onDismissError = viewModel::dismissError,
                     onSynthesize = {
                         ensureForegroundNotifReady()
                         viewModel.synthesizeNow()

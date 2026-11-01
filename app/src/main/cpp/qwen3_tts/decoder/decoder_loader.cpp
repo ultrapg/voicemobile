@@ -12,10 +12,6 @@ namespace qwen3_tts {
 
 namespace {
 
-ggml_backend_t init_dedicated_decoder_backend(std::string & error_msg) {
-    return init_dedicated_preferred_backend("AudioTokenizerDecoder", &error_msg);
-}
-
 bool is_runtime_f16_conv_weight(const std::string & name) {
     if (name == "tok_dec.pre_conv.weight" ||
         name == "tok_dec.dec.0.conv.weight" ||
@@ -418,7 +414,7 @@ bool AudioTokenizerDecoder::load_model_impl(const std::string & model_path,
 
     if (!load_tensor_data_from_file(model_path, gguf_ctx, model.ctx,
                                     model.tensors, model.buffer, error_msg,
-                                    get_preferred_backend_type())) {
+                                    GGML_BACKEND_DEVICE_TYPE_CPU)) {
         return false;
     }
 
@@ -437,31 +433,19 @@ bool AudioTokenizerDecoder::load_model_impl(const std::string & model_path,
 
     decoder_internal::ops::normalize_codebooks(*this);
 
-    state.backend_shared = shared_backend;
-    state.backend = shared_backend
-        ? init_preferred_backend("AudioTokenizerDecoder", &error_msg)
-        : init_dedicated_decoder_backend(error_msg);
+    (void) shared_backend;
+    state.backend_shared = false;
+    state.backend = init_cpu_backend("AudioTokenizerDecoder", &error_msg);
     if (!state.backend) {
         return false;
     }
 
     ggml_backend_dev_t device = ggml_backend_get_device(state.backend);
-    const char * device_name = device ? ggml_backend_dev_name(device) : "Unknown";
+    const char * device_name = device ? ggml_backend_dev_name(device) : "CPU";
     fprintf(stderr, "  AudioTokenizerDecoder backend: %s\n", device_name);
-
-    if (device && ggml_backend_dev_type(device) != GGML_BACKEND_DEVICE_TYPE_CPU) {
-        state.backend_cpu = init_cpu_backend("AudioTokenizerDecoder fallback", &error_msg);
-        if (!state.backend_cpu) {
-            error_msg = "Failed to initialize CPU fallback backend for AudioTokenizerDecoder";
-            return false;
-        }
-    }
 
     std::vector<ggml_backend_t> backends;
     backends.push_back(state.backend);
-    if (state.backend_cpu) {
-        backends.push_back(state.backend_cpu);
-    }
     state.sched = ggml_backend_sched_new(backends.data(), nullptr, (int) backends.size(), QWEN3_TTS_DEC_MAX_NODES, false, true);
     if (!state.sched) {
         error_msg = "Failed to create backend scheduler";

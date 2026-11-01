@@ -84,7 +84,7 @@ fun TuningBottomSheet(
                                 chunkMode = ChunkMode.AUTO,
                                 chunkSizeChars = 600,
                                 streamingMode = false,
-                                streamChunkSec = 1.0f,
+                                streamChunkSec = 0.40f,
                                 autoPlayOutput = true,
                                 temperature = 0.9f,
                                 topP = 1.0f,
@@ -175,12 +175,12 @@ fun TuningBottomSheet(
             AnimatedVisibility(visible = settings.streamingMode) {
                 LabeledSliderRow(
                     title = "Streaming Chunk Window",
-                    valueText = String.format(Locale.US, "%.1fs", settings.streamChunkSec),
+                    valueText = String.format(Locale.US, "%.2fs", settings.streamChunkSec),
                     value = settings.streamChunkSec,
-                    range = 0.4f..2.4f,
+                    range = 0.25f..2.5f,
                     onValueChange = { v ->
-                        val rounded = (v * 10f).roundToInt() / 10f
-                        onUpdate { it.copy(streamChunkSec = rounded) }
+                        val rounded = (v * 20f).roundToInt() / 20f
+                        onUpdate { it.copy(streamChunkSec = rounded.coerceIn(0.25f, 2.5f)) }
                     }
                 )
             }

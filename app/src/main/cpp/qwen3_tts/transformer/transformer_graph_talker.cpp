@@ -357,6 +357,7 @@ struct ggml_cgraph * transformer_internal::ops::build_step_graph(TTSTransformer 
             struct ggml_tensor * KQ_mask = ggml_get_tensor(ctx0, "inp_mask");
             struct ggml_tensor * KQV_fa = ggml_flash_attn_ext(ctx0, Q, K, V, KQ_mask,
                                                               1.0f / sqrtf((float) head_dim), 0.0f, 0.0f);
+            ggml_flash_attn_ext_set_prec(KQV_fa, GGML_PREC_F32);
             cur = ggml_cont_2d(ctx0, KQV_fa, n_head * head_dim, n_tokens);
         } else {
             struct ggml_tensor * KQ = ggml_mul_mat(ctx0, K, Q);
