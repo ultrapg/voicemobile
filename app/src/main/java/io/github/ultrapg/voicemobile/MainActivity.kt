@@ -206,10 +206,10 @@ private fun VoiceMobileRoot(viewModel: VoiceViewModel) {
                             } else {
                                 Icons.Outlined.Memory
                             },
-                            contentDescription = "Engine"
+                            contentDescription = "Models & CPU"
                         )
                     },
-                    label = { Text("Engine") }
+                    label = { Text("Models") }
                 )
             }
         }
@@ -225,6 +225,7 @@ private fun VoiceMobileRoot(viewModel: VoiceViewModel) {
                     draft = draft,
                     synthState = synthState,
                     hardwareProfile = hardwareProfile,
+                    installedModels = installedModels,
                     availableSpeakers = availableSpeakers,
                     profiles = profiles,
                     missingModels = missingModels,
@@ -236,6 +237,10 @@ private fun VoiceMobileRoot(viewModel: VoiceViewModel) {
                     micState = micState,
                     tempRefDir = viewModel.tempRefDir,
                     onSelectMode = viewModel::setMode,
+                    onSelectSizeTier = viewModel::setModelSizeTier,
+                    onSelectQuantization = viewModel::setModelQuantization,
+                    onAssignCustomModel = viewModel::assignCustomModel,
+                    onClearModelOverrides = viewModel::clearCustomModelOverrides,
                     onUpdateInputText = viewModel::updateInputText,
                     onImportTextDoc = viewModel::importTextDocument,
                     onSelectSpeaker = viewModel::setSpeaker,
@@ -351,12 +356,12 @@ private fun VoiceMobileRoot(viewModel: VoiceViewModel) {
                     installedModels = installedModels,
                     storageBytes = storageBytes,
                     activeDownloads = activeDownloads,
-                    onSelectBackend = viewModel::setBackend,
-                    onSelectHexagonPower = viewModel::setHexagonPowerMode,
-                    onToggleHmx = viewModel::setEnableHmx,
                     onSetCpuThreads = viewModel::setCpuThreads,
                     onToggleLowMem = viewModel::setLowMemMode,
+                    onSelectSizeTier = viewModel::setModelSizeTier,
+                    onSelectQuantization = viewModel::setModelQuantization,
                     onSelectPreset = viewModel::setPreset,
+                    onClearModelOverrides = viewModel::clearCustomModelOverrides,
                     onDownloadFile = { name ->
                         ensureForegroundNotifReady()
                         viewModel.downloadSingleModel(name)

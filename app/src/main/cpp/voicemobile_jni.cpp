@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <dlfcn.h>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -57,64 +56,8 @@ std::string json_escape(const std::string & s) {
     return out;
 }
 
-// Query Qualcomm FastRPC CDSP architecture version (e.g. 73, 75, 79, 81, 85) if libcdsprpc.so is present
-int probe_qualcomm_hexagon_arch() {
-    static int cached_arch = -2;
-    if (cached_arch != -2) {
-        return cached_arch;
-    }
-
-    void * handle = dlopen("libcdsprpc.so", RTLD_LAZY | RTLD_LOCAL);
-    if (!handle) {
-        cached_arch = 0;
-        return 0;
-    }
-
-    using remote_handle_control_fn = int (*)(uint32_t req, void * data, uint32_t datalen);
-    auto fn = reinterpret_cast<remote_handle_control_fn>(dlsym(handle, "remote_handle_control"));
-    if (!fn) {
-        dlclose(handle);
-        cached_arch = 0;
-        return 0;
-    }
-
-    struct remote_dsp_capability {
-        uint32_t domain;
-        uint32_t attribute_ID;
-        uint32_t capability;
-    };
-
-    // DSPRPC_GET_DSP_INFO = 5, ARCH_VER = 2 (or 0x102 / standard FastRPC attribute 2, CDSP_DOMAIN_ID = 3)
-    constexpr uint32_t kDsprpcGetDspInfo = 5;
-    constexpr uint32_t kCdspDomain = 3;
-    constexpr uint32_t kArchVer = 2;
-
-    remote_dsp_capability cap{ kCdspDomain, kArchVer, 0 };
-    int rc = fn(kDsprpcGetDspInfo, &cap, sizeof(cap));
-    dlclose(handle);
-
-    if (rc == 0 && (cap.capability & 0xff) != 0) {
-        uint32_t v = cap.capability & 0xff;
-        cached_arch = (int) ((v >> 4) * 10 + (v & 0x0f));
-    } else {
-        cached_arch = -1; // libcdsprpc.so present, arch auto-detected inside ggml-hexagon
-    }
-    return cached_arch;
-}
-
-void apply_runtime_env(
-    const std::string & power_mode,
-    bool enable_hmx,
-    bool low_mem
-) {
-    if (!power_mode.empty()) {
-        setenv("GGML_HEXAGON_POWER_MODE", power_mode.c_str(), 1);
-        setenv("QNN_HTP_PERF_MODE", power_mode.c_str(), 1);
-    }
-    setenv("GGML_HEXAGON_NHMX", enable_hmx ? "1" : "0", 1);
+void apply_runtime_env(bool low_mem) {
     setenv("QWEN3_TTS_LOW_MEM", low_mem ? "1" : "0", 1);
-    setenv("QNN_HTP_ENABLE_PDR", "1", 1);
-    setenv("FASTRPC_PERF_KERNEL", "1", 1);
 }
 
 } // namespace
@@ -123,20 +66,14 @@ extern "C" {
 
 JNIEXPORT void JNICALL
 Java_io_github_ultrapg_voicemobile_engine_VoiceEngineBridge_nativeInitRuntime(
-    JNIEnv * env,
+    JNIEnv * /* env */,
     jobject /* thiz */,
-    jstring j_native_lib_dir,
-    jstring j_power_mode,
-    jboolean enable_hmx,
     jboolean low_mem,
     jint cpu_threads
 ) {
-    const std::string native_lib_dir = jstring_to_utf8(env, j_native_lib_dir);
-    const std::string power_mode = jstring_to_utf8(env, j_power_mode);
-
-    apply_runtime_env(power_mode, enable_hmx == JNI_TRUE, low_mem == JNI_TRUE);
+    apply_runtime_env(low_mem == JNI_TRUE);
     qwen3_tts::set_cpu_thread_count((int32_t) cpu_threads, cpu_threads > 0);
-    qwen3_tts::ensure_backends_registered(native_lib_dir);
+    qwen3_tts::ensure_backends_registered();
 }
 
 JNIEXPORT jstring JNICALL
@@ -145,19 +82,12 @@ Java_io_github_ultrapg_voicemobile_engine_VoiceEngineBridge_nativeGetHardwareSta
     jobject /* thiz */
 ) {
     const auto st = qwen3_tts::query_hardware_backend_status();
-    const int hex_arch = probe_qualcomm_hexagon_arch();
 
     std::ostringstream oss;
     oss << "{"
         << "\"cpuAvailable\":" << (st.cpu_available ? "true" : "false") << ","
-        << "\"gpuAvailable\":" << (st.gpu_available ? "true" : "false") << ","
-        << "\"npuAvailable\":" << (st.npu_available ? "true" : "false") << ","
         << "\"cpuDesc\":\"" << json_escape(st.cpu_description) << "\","
-        << "\"gpuDesc\":\"" << json_escape(st.gpu_description) << "\","
-        << "\"npuDesc\":\"" << json_escape(st.npu_description) << "\","
-        << "\"hexagonArch\":" << hex_arch << ","
         << "\"activeBackend\":\"" << json_escape(qwen3_tts::get_active_backend_name()) << "\","
-        << "\"fallbackActive\":" << (st.fallback_active ? "true" : "false") << ","
         << "\"cpuThreads\":" << qwen3_tts::get_cpu_thread_count()
         << "}";
 
@@ -166,29 +96,14 @@ Java_io_github_ultrapg_voicemobile_engine_VoiceEngineBridge_nativeGetHardwareSta
 
 JNIEXPORT jboolean JNICALL
 Java_io_github_ultrapg_voicemobile_engine_VoiceEngineBridge_nativeConfigureBackend(
-    JNIEnv * env,
+    JNIEnv * /* env */,
     jobject /* thiz */,
-    jint preference,
     jint cpu_threads,
-    jstring j_power_mode,
-    jboolean enable_hmx,
     jboolean low_mem
 ) {
-    const std::string power_mode = jstring_to_utf8(env, j_power_mode);
-    apply_runtime_env(power_mode, enable_hmx == JNI_TRUE, low_mem == JNI_TRUE);
+    apply_runtime_env(low_mem == JNI_TRUE);
     qwen3_tts::set_cpu_thread_count((int32_t) cpu_threads, cpu_threads > 0);
-
-    qwen3_tts::backend_preference pref = qwen3_tts::backend_preference::auto_select;
-    switch (preference) {
-        case 1: pref = qwen3_tts::backend_preference::cpu; break;
-        case 2: pref = qwen3_tts::backend_preference::cuda; break; // GPU (Adreno OpenCL / Vulkan)
-        case 3: pref = qwen3_tts::backend_preference::npu; break;  // Qualcomm Hexagon HTP NPU
-        case 0:
-        default:
-            pref = qwen3_tts::backend_preference::auto_select;
-            break;
-    }
-    return qwen3_tts::set_backend_preference(pref) ? JNI_TRUE : JNI_FALSE;
+    return qwen3_tts::set_backend_preference(qwen3_tts::backend_preference::cpu) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jlong JNICALL

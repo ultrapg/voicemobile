@@ -17,16 +17,16 @@ import io.github.ultrapg.voicemobile.data.DownloadProgress
 import io.github.ultrapg.voicemobile.data.GeneratedClipItem
 import io.github.ultrapg.voicemobile.data.ModelDownloadManager
 import io.github.ultrapg.voicemobile.data.ModelPreset
+import io.github.ultrapg.voicemobile.data.ModelQuantization
+import io.github.ultrapg.voicemobile.data.ModelSizeTier
 import io.github.ultrapg.voicemobile.data.ModelsCatalog
 import io.github.ultrapg.voicemobile.data.SettingsRepository
 import io.github.ultrapg.voicemobile.data.VoiceProfileItem
 import io.github.ultrapg.voicemobile.data.VoiceRepository
-import io.github.ultrapg.voicemobile.engine.AcceleratorBackend
 import io.github.ultrapg.voicemobile.engine.ChunkMode
 import io.github.ultrapg.voicemobile.engine.DeviceHardwareProfile
 import io.github.ultrapg.voicemobile.engine.EngineRuntimeConfig
 import io.github.ultrapg.voicemobile.engine.HardwareProbe
-import io.github.ultrapg.voicemobile.engine.HexagonPowerMode
 import io.github.ultrapg.voicemobile.engine.NativeHardwareStatus
 import io.github.ultrapg.voicemobile.engine.SynthesisJobRequest
 import io.github.ultrapg.voicemobile.engine.SynthesisMode
@@ -70,7 +70,7 @@ data class ActiveSynthesisState(
 )
 
 data class StudioDraftState(
-    val inputText: String = "Welcome to Voice Mobile. Everything runs completely offline on your phone across Qualcomm Hexagon NPU, GPU, and ARM64 CPU.",
+    val inputText: String = "Welcome to Voice Mobile. Everything runs completely offline on your phone with native ARM64 CPU synthesis.",
     val stylePrompt: String = ModelsCatalog.STYLE_PRESETS.first().second,
     val speakInstruction: String = "",
     val cloneSourceKind: CloneSourceKind = CloneSourceKind.AUDIO_OR_MIC,
@@ -246,27 +246,42 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { settingsRepo.update { it.copy(selectedSpeaker = speaker) } }
     }
 
-    fun setBackend(backend: AcceleratorBackend) {
-        viewModelScope.launch {
-            settingsRepo.update { it.copy(backend = backend) }
-            refreshHardwareStatus()
-        }
-    }
-
-    fun setHexagonPowerMode(mode: HexagonPowerMode) {
-        viewModelScope.launch { settingsRepo.update { it.copy(hexagonPowerMode = mode) } }
-    }
-
-    fun setEnableHmx(enabled: Boolean) {
-        viewModelScope.launch { settingsRepo.update { it.copy(enableHmx = enabled) } }
-    }
-
     fun setCpuThreads(threads: Int) {
         viewModelScope.launch { settingsRepo.update { it.copy(cpuThreads = threads.coerceIn(0, 16)) } }
     }
 
     fun setLowMemMode(enabled: Boolean) {
         viewModelScope.launch { settingsRepo.update { it.copy(lowMemMode = enabled) } }
+    }
+
+    fun setModelSizeTier(sizeTier: ModelSizeTier) {
+        viewModelScope.launch {
+            settingsRepo.update { cur ->
+                val nextPreset = ModelPreset.forSizeAndQuant(sizeTier, cur.preset.quantization)
+                cur.copy(
+                    preset = nextPreset,
+                    customStyleModel = "",
+                    customCloneModel = "",
+                    customSpeakModel = "",
+                    customCodecModel = ""
+                )
+            }
+        }
+    }
+
+    fun setModelQuantization(quantization: ModelQuantization) {
+        viewModelScope.launch {
+            settingsRepo.update { cur ->
+                val nextPreset = ModelPreset.forSizeAndQuant(cur.preset.sizeTier, quantization)
+                cur.copy(
+                    preset = nextPreset,
+                    customStyleModel = "",
+                    customCloneModel = "",
+                    customSpeakModel = "",
+                    customCodecModel = ""
+                )
+            }
+        }
     }
 
     fun setPreset(preset: ModelPreset) {
@@ -283,6 +298,20 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearCustomModelOverrides() {
+        viewModelScope.launch {
+            settingsRepo.update {
+                it.copy(
+                    customStyleModel = "",
+                    customCloneModel = "",
+                    customSpeakModel = "",
+                    customCodecModel = ""
+                )
+            }
+            postMessage("Using preset models (${settings.value.preset.badge})")
+        }
+    }
+
     fun assignCustomModel(role: String, fileName: String) {
         viewModelScope.launch {
             settingsRepo.update { cur ->
@@ -294,7 +323,16 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     else -> cur
                 }
             }
-            postMessage("Assigned $fileName to ${role.replaceFirstChar { it.uppercase() }}")
+            if (fileName.isNotBlank()) {
+                val roleName = when (role) {
+                    "style" -> "Voice Design"
+                    "clone" -> "Clone / Base"
+                    "speak" -> "Speak"
+                    "codec" -> "12Hz Codec"
+                    else -> role
+                }
+                postMessage("Selected $fileName for $roleName")
+            }
         }
     }
 
@@ -364,7 +402,8 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         val talkerReady = appSettings.effectiveTalkerFileName(appSettings.activeMode) in names
         val codecFile = ModelsCatalog.resolveInstalledOrPreferredCodec(
             downloadManager.modelsDir,
-            appSettings.effectiveCodecFileName()
+            appSettings.effectiveCodecFileName(),
+            allowInstalledFallback = appSettings.customCodecModel.isBlank()
         )
         return talkerReady && codecFile.name in names
     }
@@ -374,7 +413,8 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         val missing = mutableListOf<String>()
         val codecFile = ModelsCatalog.resolveInstalledOrPreferredCodec(
             downloadManager.modelsDir,
-            appSettings.effectiveCodecFileName()
+            appSettings.effectiveCodecFileName(),
+            allowInstalledFallback = appSettings.customCodecModel.isBlank()
         )
         if (codecFile.name !in names) {
             missing += appSettings.effectiveCodecFileName()
@@ -558,7 +598,8 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
             val talkerFile = File(downloadManager.modelsDir, curSettings.effectiveTalkerFileName(curSettings.activeMode))
             val codecFile = ModelsCatalog.resolveInstalledOrPreferredCodec(
                 downloadManager.modelsDir,
-                curSettings.effectiveCodecFileName()
+                curSettings.effectiveCodecFileName(),
+                allowInstalledFallback = curSettings.customCodecModel.isBlank()
             )
 
             // Optional inline profile save during Clone
@@ -589,7 +630,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
 
             _synthState.value = ActiveSynthesisState(
                 isRunning = true,
-                statusText = "Preparing ${curSettings.backend.title} pipeline…",
+                statusText = "Preparing ARM64 CPU pipeline…",
                 chunkIndex = 0,
                 totalChunks = chunks.size,
                 tokensGenerated = 0,
@@ -598,7 +639,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
             SynthesisService.startOrUpdate(
                 appContext,
                 "Voice Mobile Synthesizing",
-                "Running on ${curSettings.backend.title}",
+                "Running Qwen3-TTS (${curSettings.activeModelSummaryChip()}) on ARM64 CPU",
                 isMedia = curSettings.streamingMode
             )
 
@@ -760,11 +801,12 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
             val curSettings = settings.value
             val baseModelFile = ModelsCatalog.resolveBestBaseModelForProfiles(
                 downloadManager.modelsDir,
-                curSettings.preset
+                curSettings.effectiveTalkerFileName(SynthesisMode.CLONE)
             )
             val codecFile = ModelsCatalog.resolveInstalledOrPreferredCodec(
                 downloadManager.modelsDir,
-                curSettings.effectiveCodecFileName()
+                curSettings.effectiveCodecFileName(),
+                allowInstalledFallback = curSettings.customCodecModel.isBlank()
             )
 
             val neededDownloads = mutableListOf<String>()
@@ -799,11 +841,12 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                 val curSettings = settings.value
                 val baseModelFile = ModelsCatalog.resolveBestBaseModelForProfiles(
                     downloadManager.modelsDir,
-                    curSettings.preset
+                    curSettings.effectiveTalkerFileName(SynthesisMode.CLONE)
                 )
                 val codecFile = ModelsCatalog.resolveInstalledOrPreferredCodec(
                     downloadManager.modelsDir,
-                    curSettings.effectiveCodecFileName()
+                    curSettings.effectiveCodecFileName(),
+                    allowInstalledFallback = curSettings.customCodecModel.isBlank()
                 )
                 val id = "prof_${System.currentTimeMillis()}"
                 val ext = if (fullIcl) "json" else "bin"
@@ -915,10 +958,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun AppSettings.toRuntimeConfig(): EngineRuntimeConfig = EngineRuntimeConfig(
-        backend = backend,
         cpuThreads = cpuThreads,
-        powerMode = hexagonPowerMode,
-        enableHmx = enableHmx,
         lowMemMode = lowMemMode
     )
 }

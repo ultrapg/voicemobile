@@ -7,9 +7,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import io.github.ultrapg.voicemobile.engine.AcceleratorBackend
 import io.github.ultrapg.voicemobile.engine.ChunkMode
-import io.github.ultrapg.voicemobile.engine.HexagonPowerMode
 import io.github.ultrapg.voicemobile.engine.SynthesisMode
 import io.github.ultrapg.voicemobile.engine.TtsLanguage
 import kotlinx.coroutines.flow.Flow
@@ -27,10 +25,7 @@ data class AppSettings(
     val customCloneModel: String = "",
     val customSpeakModel: String = "",
     val customCodecModel: String = "",
-    // Hardware Acceleration
-    val backend: AcceleratorBackend = AcceleratorBackend.AUTO,
-    val hexagonPowerMode: HexagonPowerMode = HexagonPowerMode.SUSTAINED_HIGH,
-    val enableHmx: Boolean = true,
+    // ARM64 CPU Runtime
     val cpuThreads: Int = 0, // 0 = Auto optimal threads
     val lowMemMode: Boolean = false,
     // Generation & Post-Processing (matching voicecli CommonSynthArgs + settings.json)
@@ -62,8 +57,23 @@ data class AppSettings(
     fun effectiveCodecFileName(): String =
         customCodecModel.ifBlank { preset.codecModelFile }
 
+    val hasCustomModelOverrides: Boolean
+        get() = customSpeakModel.isNotBlank() ||
+            customCloneModel.isNotBlank() ||
+            customStyleModel.isNotBlank() ||
+            customCodecModel.isNotBlank()
+
     val supportsSpeakInstruction: Boolean
         get() = !effectiveTalkerFileName(SynthesisMode.SPEAK).contains("0.6b", ignoreCase = true)
+
+    fun activeModelSummaryChip(): String {
+        val talkerName = effectiveTalkerFileName(activeMode)
+        val spec = ModelsCatalog.specFor(talkerName)
+        if (spec.sizeTier != null && spec.quantization != null) {
+            return "${spec.sizeTier.shortLabel} · ${spec.quantization.shortTag}"
+        }
+        return spec.displayTitle.take(24)
+    }
 }
 
 class SettingsRepository(private val context: Context) {
@@ -76,9 +86,6 @@ class SettingsRepository(private val context: Context) {
         val CUSTOM_SPEAK = stringPreferencesKey("custom_speak_model")
         val CUSTOM_CODEC = stringPreferencesKey("custom_codec_model")
 
-        val BACKEND = intPreferencesKey("backend_id")
-        val HEX_POWER = stringPreferencesKey("hexagon_power_mode")
-        val ENABLE_HMX = booleanPreferencesKey("enable_hmx")
         val CPU_THREADS = intPreferencesKey("cpu_threads")
         val LOW_MEM = booleanPreferencesKey("low_mem_mode")
 
@@ -107,11 +114,6 @@ class SettingsRepository(private val context: Context) {
             customCloneModel = p[Keys.CUSTOM_CLONE].orEmpty(),
             customSpeakModel = p[Keys.CUSTOM_SPEAK].orEmpty(),
             customCodecModel = p[Keys.CUSTOM_CODEC].orEmpty(),
-            backend = AcceleratorBackend.fromId(p[Keys.BACKEND] ?: AcceleratorBackend.AUTO.nativeId),
-            hexagonPowerMode = HexagonPowerMode.fromEnv(
-                p[Keys.HEX_POWER] ?: HexagonPowerMode.SUSTAINED_HIGH.envValue
-            ),
-            enableHmx = p[Keys.ENABLE_HMX] ?: true,
             cpuThreads = (p[Keys.CPU_THREADS] ?: 0).coerceIn(0, 16),
             lowMemMode = p[Keys.LOW_MEM] ?: false,
             language = TtsLanguage.fromCode(p[Keys.LANGUAGE] ?: TtsLanguage.AUTO.code),
@@ -141,11 +143,6 @@ class SettingsRepository(private val context: Context) {
                 customCloneModel = prefs[Keys.CUSTOM_CLONE].orEmpty(),
                 customSpeakModel = prefs[Keys.CUSTOM_SPEAK].orEmpty(),
                 customCodecModel = prefs[Keys.CUSTOM_CODEC].orEmpty(),
-                backend = AcceleratorBackend.fromId(prefs[Keys.BACKEND] ?: AcceleratorBackend.AUTO.nativeId),
-                hexagonPowerMode = HexagonPowerMode.fromEnv(
-                    prefs[Keys.HEX_POWER] ?: HexagonPowerMode.SUSTAINED_HIGH.envValue
-                ),
-                enableHmx = prefs[Keys.ENABLE_HMX] ?: true,
                 cpuThreads = prefs[Keys.CPU_THREADS] ?: 0,
                 lowMemMode = prefs[Keys.LOW_MEM] ?: false,
                 language = TtsLanguage.fromCode(prefs[Keys.LANGUAGE] ?: TtsLanguage.AUTO.code),
@@ -171,9 +168,6 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.CUSTOM_CLONE] = next.customCloneModel
             prefs[Keys.CUSTOM_SPEAK] = next.customSpeakModel
             prefs[Keys.CUSTOM_CODEC] = next.customCodecModel
-            prefs[Keys.BACKEND] = next.backend.nativeId
-            prefs[Keys.HEX_POWER] = next.hexagonPowerMode.envValue
-            prefs[Keys.ENABLE_HMX] = next.enableHmx
             prefs[Keys.CPU_THREADS] = next.cpuThreads
             prefs[Keys.LOW_MEM] = next.lowMemMode
             prefs[Keys.LANGUAGE] = next.language.code

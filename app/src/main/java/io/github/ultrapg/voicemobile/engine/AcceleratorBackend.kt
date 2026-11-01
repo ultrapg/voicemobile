@@ -1,74 +1,5 @@
 package io.github.ultrapg.voicemobile.engine
 
-enum class AcceleratorBackend(
-    val nativeId: Int,
-    val title: String,
-    val badge: String,
-    val subtitle: String
-) {
-    AUTO(
-        nativeId = 0,
-        title = "Auto",
-        badge = "Smart Cascade",
-        subtitle = "Hexagon HTP NPU → Adreno OpenCL GPU → ARM64 CPU"
-    ),
-    NPU(
-        nativeId = 3,
-        title = "Qualcomm NPU",
-        badge = "Hexagon HTP",
-        subtitle = "Snapdragon Hexagon Tensor Processor (HVX + HMX)"
-    ),
-    GPU(
-        nativeId = 2,
-        title = "GPU",
-        badge = "Adreno OpenCL",
-        subtitle = "Qualcomm Adreno & mobile OpenCL tiled tensor kernels"
-    ),
-    CPU(
-        nativeId = 1,
-        title = "CPU",
-        badge = "ARM64 SIMD",
-        subtitle = "Multi-core ARMv8.2+ NEON, FP16 & DotProd"
-    );
-
-    companion object {
-        fun fromId(id: Int): AcceleratorBackend =
-            entries.firstOrNull { it.nativeId == id } ?: AUTO
-    }
-}
-
-enum class HexagonPowerMode(
-    val envValue: String,
-    val label: String,
-    val description: String
-) {
-    SUSTAINED_HIGH(
-        envValue = "sustained_high_performance",
-        label = "Sustained High",
-        description = "Consistent high NPU clocks without thermal throttling"
-    ),
-    BURST(
-        envValue = "burst",
-        label = "Burst",
-        description = "Peak Hexagon HTP & HMX clock frequency"
-    ),
-    BALANCED(
-        envValue = "balanced",
-        label = "Balanced",
-        description = "Optimal performance per watt on battery"
-    ),
-    POWER_SAVER(
-        envValue = "power_saver",
-        label = "Power Saver",
-        description = "Low-power DSP voltage rail for cool operation"
-    );
-
-    companion object {
-        fun fromEnv(value: String): HexagonPowerMode =
-            entries.firstOrNull { it.envValue == value } ?: SUSTAINED_HIGH
-    }
-}
-
 enum class SynthesisMode(
     val id: String,
     val label: String,
@@ -92,7 +23,7 @@ enum class SynthesisMode(
 
     companion object {
         fun fromId(id: String): SynthesisMode =
-            entries.firstOrNull { it.id == id } ?: DESIGN
+            entries.firstOrNull { it.id == id } ?: SPEAK
     }
 }
 

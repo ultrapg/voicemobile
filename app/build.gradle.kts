@@ -16,8 +16,8 @@ android {
         applicationId = "io.github.ultrapg.voicemobile"
         minSdk = 35
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -96,11 +96,6 @@ android {
 
     packaging {
         jniLibs {
-            // Extracts libggml-htp-v73..v85.so to applicationInfo.nativeLibraryDir so Qualcomm
-            // Hexagon FastRPC (ADSP_LIBRARY_PATH / CDSP_LIBRARY_PATH) can map NPU skel binaries.
-            useLegacyPackaging = true
-            // Do NOT run ARM64 llvm-strip on Qualcomm Hexagon DSP skel binaries!
-            keepDebugSymbols += setOf("**/libggml-htp-*.so")
             pickFirsts += setOf("**/libc++_shared.so")
         }
         resources {

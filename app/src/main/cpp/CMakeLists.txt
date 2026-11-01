@@ -87,6 +87,5 @@ target_link_libraries(voicemobile_jni PRIVATE
     ggml-base
     ggml-cpu
     ${ANDROID_LOG_LIB}
-    dl
     m
 )

@@ -55,7 +55,7 @@ class TextProcessorTest {
     fun prepareChunks_respectsAutoAndForceModes() {
         val paragraph = buildString {
             repeat(8) { idx ->
-                append("Sentence number ${idx + 1} runs offline on Qualcomm Hexagon NPU with crisp audio fidelity. ")
+                append("Sentence number ${idx + 1} runs offline on ARM64 SIMD CPU with crisp audio fidelity. ")
             }
         }
         val singlePass = TextProcessor.prepareChunks(

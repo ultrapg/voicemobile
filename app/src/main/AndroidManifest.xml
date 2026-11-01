@@ -26,28 +26,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.VoiceMobile">
 
-        <!-- Qualcomm Hexagon HTP NPU FastRPC vendor libraries -->
-        <uses-native-library
-            android:name="libcdsprpc.so"
-            android:required="false" />
-        <uses-native-library
-            android:name="libadsprpc.so"
-            android:required="false" />
-        <uses-native-library
-            android:name="libsdsprpc.so"
-            android:required="false" />
-
-        <!-- Qualcomm Adreno & Mobile OpenCL GPU vendor libraries -->
-        <uses-native-library
-            android:name="libOpenCL.so"
-            android:required="false" />
-        <uses-native-library
-            android:name="libOpenCL-pixel.so"
-            android:required="false" />
-        <uses-native-library
-            android:name="libGLES_mali.so"
-            android:required="false" />
-
         <activity
             android:name=".MainActivity"
             android:exported="true"

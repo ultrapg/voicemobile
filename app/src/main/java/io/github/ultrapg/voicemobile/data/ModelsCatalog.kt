@@ -4,8 +4,51 @@ import io.github.ultrapg.voicemobile.engine.SynthesisMode
 import java.io.File
 import java.io.RandomAccessFile
 
+enum class ModelSizeTier(
+    val id: String,
+    val label: String,
+    val shortLabel: String,
+    val description: String
+) {
+    SIZE_06B(
+        id = "0.6b",
+        label = "Qwen3-TTS 0.6B",
+        shortLabel = "0.6B",
+        description = "Fast, lightweight mobile talker for Speak & Clone (uses 1.7B for Voice Design)"
+    ),
+    SIZE_17B(
+        id = "1.7b",
+        label = "Qwen3-TTS 1.7B",
+        shortLabel = "1.7B",
+        description = "Full flagship talker across Speak (with emotion instructions), Clone & Voice Design"
+    )
+}
+
+enum class ModelQuantization(
+    val id: String,
+    val label: String,
+    val shortTag: String
+) {
+    Q4_K_M("Q4_K_M", "Q4_K_M (4-bit)", "Q4_K_M"),
+    Q8_0("Q8_0", "Q8_0 (8-bit)", "Q8_0"),
+    BF16("BF16", "BF16 (16-bit)", "BF16"),
+    F32("F32", "F32 (32-bit)", "F32")
+}
+
+enum class ModelRole(
+    val id: String,
+    val label: String
+) {
+    SPEAK("speak", "Speak (CustomVoice)"),
+    CLONE("clone", "Clone & Profiles (Base)"),
+    DESIGN("style", "Voice Design"),
+    CODEC("codec", "12Hz Audio Codec")
+}
+
 enum class ModelPreset(
     val id: String,
+    val sizeTier: ModelSizeTier,
+    val quantization: ModelQuantization,
     val title: String,
     val badge: String,
     val summary: String,
@@ -16,9 +59,11 @@ enum class ModelPreset(
 ) {
     FAST_06B_Q8(
         id = "0.6b",
-        title = "Balanced Fast (0.6B Q8)",
-        badge = "Recommended",
-        summary = "Crisp 8-bit 0.6B Q8_0 for Clone & Speak (~1.2 GB to start), 1.7B Q8_0 for Design",
+        sizeTier = ModelSizeTier.SIZE_06B,
+        quantization = ModelQuantization.Q8_0,
+        title = "Qwen3-TTS 0.6B · Q8_0",
+        badge = "0.6B · Q8_0",
+        summary = "Recommended balanced 8-bit 0.6B Q8_0 for Speak & Clone (~1.2 GB to start), 1.7B Q8_0 for Design",
         styleModelFile = "qwen-talker-1.7b-voicedesign-Q8_0.gguf",
         cloneModelFile = "qwen-talker-0.6b-base-Q8_0.gguf",
         speakModelFile = "qwen-talker-0.6b-customvoice-Q8_0.gguf",
@@ -26,19 +71,47 @@ enum class ModelPreset(
     ),
     TINY_06B_Q4(
         id = "0.6b-q4",
-        title = "Ultra Compact (0.6B Q4)",
-        badge = "0.6B Q4",
-        summary = "Smallest footprint (~850 MB to start) with 4-bit quantization",
+        sizeTier = ModelSizeTier.SIZE_06B,
+        quantization = ModelQuantization.Q4_K_M,
+        title = "Qwen3-TTS 0.6B · Q4_K_M",
+        badge = "0.6B · Q4_K_M",
+        summary = "Smallest footprint (~850 MB to start) with 4-bit 0.6B Q4_K_M quantization",
         styleModelFile = "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf",
         cloneModelFile = "qwen-talker-0.6b-base-Q4_K_M.gguf",
         speakModelFile = "qwen-talker-0.6b-customvoice-Q4_K_M.gguf",
         codecModelFile = "qwen-tokenizer-12hz-Q8_0.gguf"
     ),
+    FAST_06B_BF16(
+        id = "0.6b-bf16",
+        sizeTier = ModelSizeTier.SIZE_06B,
+        quantization = ModelQuantization.BF16,
+        title = "Qwen3-TTS 0.6B · BF16",
+        badge = "0.6B · BF16",
+        summary = "Unquantized BFloat16 0.6B models for Speak & Clone, 1.7B BF16 for Design",
+        styleModelFile = "qwen-talker-1.7b-voicedesign-BF16.gguf",
+        cloneModelFile = "qwen-talker-0.6b-base-BF16.gguf",
+        speakModelFile = "qwen-talker-0.6b-customvoice-BF16.gguf",
+        codecModelFile = "qwen-tokenizer-12hz-BF16.gguf"
+    ),
+    FAST_06B_F32(
+        id = "0.6b-f32",
+        sizeTier = ModelSizeTier.SIZE_06B,
+        quantization = ModelQuantization.F32,
+        title = "Qwen3-TTS 0.6B · F32",
+        badge = "0.6B · F32",
+        summary = "Full 32-bit float 0.6B models for Speak & Clone, 1.7B F32 for Design",
+        styleModelFile = "qwen-talker-1.7b-voicedesign-F32.gguf",
+        cloneModelFile = "qwen-talker-0.6b-base-F32.gguf",
+        speakModelFile = "qwen-talker-0.6b-customvoice-F32.gguf",
+        codecModelFile = "qwen-tokenizer-12hz-F32.gguf"
+    ),
     FULL_17B_Q4(
         id = "q4",
-        title = "Full 1.7B Compact (Q4_K_M)",
-        badge = "1.7B Q4",
-        summary = "Full 1.7B expressiveness across all modes in 4-bit quantization",
+        sizeTier = ModelSizeTier.SIZE_17B,
+        quantization = ModelQuantization.Q4_K_M,
+        title = "Qwen3-TTS 1.7B · Q4_K_M",
+        badge = "1.7B · Q4_K_M",
+        summary = "Full 1.7B expressiveness & emotion steering across all modes in compact 4-bit quantization",
         styleModelFile = "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf",
         cloneModelFile = "qwen-talker-1.7b-base-Q4_K_M.gguf",
         speakModelFile = "qwen-talker-1.7b-customvoice-Q4_K_M.gguf",
@@ -46,33 +119,39 @@ enum class ModelPreset(
     ),
     FULL_17B_Q8(
         id = "q8",
-        title = "Studio 1.7B (Q8_0)",
-        badge = "1.7B Q8",
-        summary = "High-fidelity 8-bit 1.7B models for flagship 12 GB+ RAM devices",
+        sizeTier = ModelSizeTier.SIZE_17B,
+        quantization = ModelQuantization.Q8_0,
+        title = "Qwen3-TTS 1.7B · Q8_0",
+        badge = "1.7B · Q8_0",
+        summary = "High-fidelity 8-bit 1.7B models across Speak, Clone & Voice Design",
         styleModelFile = "qwen-talker-1.7b-voicedesign-Q8_0.gguf",
         cloneModelFile = "qwen-talker-1.7b-base-Q8_0.gguf",
         speakModelFile = "qwen-talker-1.7b-customvoice-Q8_0.gguf",
         codecModelFile = "qwen-tokenizer-12hz-BF16.gguf"
     ),
-    FAST_06B_BF16(
-        id = "0.6b-bf16",
-        title = "Unquantized 0.6B (BF16)",
-        badge = "0.6B BF16",
-        summary = "Full BFloat16 precision 0.6B models for Clone & Speak",
-        styleModelFile = "qwen-talker-1.7b-voicedesign-BF16.gguf",
-        cloneModelFile = "qwen-talker-0.6b-base-BF16.gguf",
-        speakModelFile = "qwen-talker-0.6b-customvoice-BF16.gguf",
-        codecModelFile = "qwen-tokenizer-12hz-BF16.gguf"
-    ),
     FULL_17B_BF16(
         id = "bf16",
-        title = "Reference 1.7B (BF16)",
-        badge = "1.7B BF16",
-        summary = "Uncompressed BFloat16 desktop reference weights (requires 16 GB RAM)",
+        sizeTier = ModelSizeTier.SIZE_17B,
+        quantization = ModelQuantization.BF16,
+        title = "Qwen3-TTS 1.7B · BF16",
+        badge = "1.7B · BF16",
+        summary = "Uncompressed BFloat16 1.7B reference weights across all modes",
         styleModelFile = "qwen-talker-1.7b-voicedesign-BF16.gguf",
         cloneModelFile = "qwen-talker-1.7b-base-BF16.gguf",
         speakModelFile = "qwen-talker-1.7b-customvoice-BF16.gguf",
         codecModelFile = "qwen-tokenizer-12hz-BF16.gguf"
+    ),
+    FULL_17B_F32(
+        id = "f32",
+        sizeTier = ModelSizeTier.SIZE_17B,
+        quantization = ModelQuantization.F32,
+        title = "Qwen3-TTS 1.7B · F32",
+        badge = "1.7B · F32",
+        summary = "Full 32-bit float 1.7B desktop reference weights across all modes",
+        styleModelFile = "qwen-talker-1.7b-voicedesign-F32.gguf",
+        cloneModelFile = "qwen-talker-1.7b-base-F32.gguf",
+        speakModelFile = "qwen-talker-1.7b-customvoice-F32.gguf",
+        codecModelFile = "qwen-tokenizer-12hz-F32.gguf"
     );
 
     fun talkerFileForMode(mode: SynthesisMode): String = when (mode) {
@@ -83,9 +162,9 @@ enum class ModelPreset(
 
     fun allRequiredFiles(): List<String> = listOf(
         codecModelFile,
-        styleModelFile,
+        speakModelFile,
         cloneModelFile,
-        speakModelFile
+        styleModelFile
     ).distinct()
 
     companion object {
@@ -95,13 +174,20 @@ enum class ModelPreset(
                     (id.equals("tiny", ignoreCase = true) && it == TINY_06B_Q4) ||
                     (id.equals("fast", ignoreCase = true) && it == FAST_06B_Q8)
             } ?: FAST_06B_Q8
+
+        fun forSizeAndQuant(sizeTier: ModelSizeTier, quant: ModelQuantization): ModelPreset =
+            entries.firstOrNull { it.sizeTier == sizeTier && it.quantization == quant }
+                ?: if (sizeTier == ModelSizeTier.SIZE_17B) FULL_17B_Q4 else FAST_06B_Q8
     }
 }
 
 data class ModelFileSpec(
     val fileName: String,
     val displayTitle: String,
+    val role: ModelRole,
     val roleLabel: String,
+    val sizeTier: ModelSizeTier?,
+    val quantization: ModelQuantization?,
     val approxSizeMb: Int
 ) {
     val downloadUrl: String
@@ -126,37 +212,81 @@ object ModelsCatalog {
         "News Anchor" to "A neutral, composed broadcast anchor voice with balanced pitch, crisp consonants, and steady cadence."
     )
 
-    private val KNOWN_SPECS: Map<String, ModelFileSpec> = listOf(
-        // Shared 12Hz Audio Codec / Vocoder
-        ModelFileSpec("qwen-tokenizer-12hz-Q4_K_M.gguf", "12Hz Audio Codec (Q4_K_M)", "Shared Vocoder & Tokenizer", 243),
-        ModelFileSpec("qwen-tokenizer-12hz-Q8_0.gguf", "12Hz Audio Codec (Q8_0)", "Shared Vocoder & Tokenizer", 277),
-        ModelFileSpec("qwen-tokenizer-12hz-BF16.gguf", "12Hz Audio Codec (BF16)", "Shared Vocoder & Tokenizer", 342),
+    /**
+     * Complete catalog of all 24 official Qwen3-TTS GGUF models in Serveurperso/Qwen3-TTS-GGUF.
+     */
+    val ALL_MODELS: List<ModelFileSpec> = listOf(
+        // 1. 0.6B CustomVoice (Speak)
+        ModelFileSpec("qwen-talker-0.6b-customvoice-Q4_K_M.gguf", "Qwen3-TTS 0.6B CustomVoice (Q4_K_M)", ModelRole.SPEAK, "0.6B Built-In Speakers", ModelSizeTier.SIZE_06B, ModelQuantization.Q4_K_M, 577),
+        ModelFileSpec("qwen-talker-0.6b-customvoice-Q8_0.gguf", "Qwen3-TTS 0.6B CustomVoice (Q8_0)", ModelRole.SPEAK, "0.6B Built-In Speakers", ModelSizeTier.SIZE_06B, ModelQuantization.Q8_0, 924),
+        ModelFileSpec("qwen-talker-0.6b-customvoice-BF16.gguf", "Qwen3-TTS 0.6B CustomVoice (BF16)", ModelRole.SPEAK, "0.6B Built-In Speakers", ModelSizeTier.SIZE_06B, ModelQuantization.BF16, 1733),
+        ModelFileSpec("qwen-talker-0.6b-customvoice-F32.gguf", "Qwen3-TTS 0.6B CustomVoice (F32)", ModelRole.SPEAK, "0.6B Built-In Speakers", ModelSizeTier.SIZE_06B, ModelQuantization.F32, 3461),
 
-        // 0.6B Talkers
-        ModelFileSpec("qwen-talker-0.6b-base-Q4_K_M.gguf", "Qwen3-TTS 0.6B Base (Q4_K_M)", "Voice Cloning & Profiles", 599),
-        ModelFileSpec("qwen-talker-0.6b-base-Q8_0.gguf", "Qwen3-TTS 0.6B Base (Q8_0)", "Voice Cloning & Profiles", 946),
-        ModelFileSpec("qwen-talker-0.6b-base-BF16.gguf", "Qwen3-TTS 0.6B Base (BF16)", "Voice Cloning & Profiles", 1756),
-        ModelFileSpec("qwen-talker-0.6b-customvoice-Q4_K_M.gguf", "Qwen3-TTS 0.6B CustomVoice (Q4_K_M)", "Built-In Speakers", 576),
-        ModelFileSpec("qwen-talker-0.6b-customvoice-Q8_0.gguf", "Qwen3-TTS 0.6B CustomVoice (Q8_0)", "Built-In Speakers", 923),
-        ModelFileSpec("qwen-talker-0.6b-customvoice-BF16.gguf", "Qwen3-TTS 0.6B CustomVoice (BF16)", "Built-In Speakers", 1733),
+        // 2. 0.6B Base (Clone & Voice Profiles)
+        ModelFileSpec("qwen-talker-0.6b-base-Q4_K_M.gguf", "Qwen3-TTS 0.6B Base (Q4_K_M)", ModelRole.CLONE, "0.6B Voice Cloning & Profiles", ModelSizeTier.SIZE_06B, ModelQuantization.Q4_K_M, 600),
+        ModelFileSpec("qwen-talker-0.6b-base-Q8_0.gguf", "Qwen3-TTS 0.6B Base (Q8_0)", ModelRole.CLONE, "0.6B Voice Cloning & Profiles", ModelSizeTier.SIZE_06B, ModelQuantization.Q8_0, 947),
+        ModelFileSpec("qwen-talker-0.6b-base-BF16.gguf", "Qwen3-TTS 0.6B Base (BF16)", ModelRole.CLONE, "0.6B Voice Cloning & Profiles", ModelSizeTier.SIZE_06B, ModelQuantization.BF16, 1756),
+        ModelFileSpec("qwen-talker-0.6b-base-F32.gguf", "Qwen3-TTS 0.6B Base (F32)", ModelRole.CLONE, "0.6B Voice Cloning & Profiles", ModelSizeTier.SIZE_06B, ModelQuantization.F32, 3495),
 
-        // 1.7B Talkers
-        ModelFileSpec("qwen-talker-1.7b-voicedesign-Q4_K_M.gguf", "Qwen3-TTS 1.7B VoiceDesign (Q4_K_M)", "Voice Design", 1127),
-        ModelFileSpec("qwen-talker-1.7b-voicedesign-Q8_0.gguf", "Qwen3-TTS 1.7B VoiceDesign (Q8_0)", "Voice Design", 1948),
-        ModelFileSpec("qwen-talker-1.7b-voicedesign-BF16.gguf", "Qwen3-TTS 1.7B VoiceDesign (BF16)", "Voice Design", 3661),
-        ModelFileSpec("qwen-talker-1.7b-base-Q4_K_M.gguf", "Qwen3-TTS 1.7B Base (Q4_K_M)", "Voice Cloning & Profiles", 1162),
-        ModelFileSpec("qwen-talker-1.7b-base-Q8_0.gguf", "Qwen3-TTS 1.7B Base (Q8_0)", "Voice Cloning & Profiles", 1983),
-        ModelFileSpec("qwen-talker-1.7b-base-BF16.gguf", "Qwen3-TTS 1.7B Base (BF16)", "Voice Cloning & Profiles", 3696),
-        ModelFileSpec("qwen-talker-1.7b-customvoice-Q4_K_M.gguf", "Qwen3-TTS 1.7B CustomVoice (Q4_K_M)", "Built-In Speakers", 1127),
-        ModelFileSpec("qwen-talker-1.7b-customvoice-Q8_0.gguf", "Qwen3-TTS 1.7B CustomVoice (Q8_0)", "Built-In Speakers", 1948),
-        ModelFileSpec("qwen-talker-1.7b-customvoice-BF16.gguf", "Qwen3-TTS 1.7B CustomVoice (BF16)", "Built-In Speakers", 3661)
-    ).associateBy { it.fileName }
+        // 3. 1.7B CustomVoice (Speak + Emotion Instructions)
+        ModelFileSpec("qwen-talker-1.7b-customvoice-Q4_K_M.gguf", "Qwen3-TTS 1.7B CustomVoice (Q4_K_M)", ModelRole.SPEAK, "1.7B Speakers + Emotion", ModelSizeTier.SIZE_17B, ModelQuantization.Q4_K_M, 1128),
+        ModelFileSpec("qwen-talker-1.7b-customvoice-Q8_0.gguf", "Qwen3-TTS 1.7B CustomVoice (Q8_0)", ModelRole.SPEAK, "1.7B Speakers + Emotion", ModelSizeTier.SIZE_17B, ModelQuantization.Q8_0, 1948),
+        ModelFileSpec("qwen-talker-1.7b-customvoice-BF16.gguf", "Qwen3-TTS 1.7B CustomVoice (BF16)", ModelRole.SPEAK, "1.7B Speakers + Emotion", ModelSizeTier.SIZE_17B, ModelQuantization.BF16, 3662),
+        ModelFileSpec("qwen-talker-1.7b-customvoice-F32.gguf", "Qwen3-TTS 1.7B CustomVoice (F32)", ModelRole.SPEAK, "1.7B Speakers + Emotion", ModelSizeTier.SIZE_17B, ModelQuantization.F32, 7317),
+
+        // 4. 1.7B Base (Clone & Voice Profiles)
+        ModelFileSpec("qwen-talker-1.7b-base-Q4_K_M.gguf", "Qwen3-TTS 1.7B Base (Q4_K_M)", ModelRole.CLONE, "1.7B Voice Cloning & Profiles", ModelSizeTier.SIZE_17B, ModelQuantization.Q4_K_M, 1163),
+        ModelFileSpec("qwen-talker-1.7b-base-Q8_0.gguf", "Qwen3-TTS 1.7B Base (Q8_0)", ModelRole.CLONE, "1.7B Voice Cloning & Profiles", ModelSizeTier.SIZE_17B, ModelQuantization.Q8_0, 1983),
+        ModelFileSpec("qwen-talker-1.7b-base-BF16.gguf", "Qwen3-TTS 1.7B Base (BF16)", ModelRole.CLONE, "1.7B Voice Cloning & Profiles", ModelSizeTier.SIZE_17B, ModelQuantization.BF16, 3697),
+        ModelFileSpec("qwen-talker-1.7b-base-F32.gguf", "Qwen3-TTS 1.7B Base (F32)", ModelRole.CLONE, "1.7B Voice Cloning & Profiles", ModelSizeTier.SIZE_17B, ModelQuantization.F32, 7363),
+
+        // 5. 1.7B VoiceDesign (Voice Design)
+        ModelFileSpec("qwen-talker-1.7b-voicedesign-Q4_K_M.gguf", "Qwen3-TTS 1.7B VoiceDesign (Q4_K_M)", ModelRole.DESIGN, "1.7B Voice Design", ModelSizeTier.SIZE_17B, ModelQuantization.Q4_K_M, 1128),
+        ModelFileSpec("qwen-talker-1.7b-voicedesign-Q8_0.gguf", "Qwen3-TTS 1.7B VoiceDesign (Q8_0)", ModelRole.DESIGN, "1.7B Voice Design", ModelSizeTier.SIZE_17B, ModelQuantization.Q8_0, 1948),
+        ModelFileSpec("qwen-talker-1.7b-voicedesign-BF16.gguf", "Qwen3-TTS 1.7B VoiceDesign (BF16)", ModelRole.DESIGN, "1.7B Voice Design", ModelSizeTier.SIZE_17B, ModelQuantization.BF16, 3662),
+        ModelFileSpec("qwen-talker-1.7b-voicedesign-F32.gguf", "Qwen3-TTS 1.7B VoiceDesign (F32)", ModelRole.DESIGN, "1.7B Voice Design", ModelSizeTier.SIZE_17B, ModelQuantization.F32, 7317),
+
+        // 6. Shared 12Hz Audio Codec / Vocoder
+        ModelFileSpec("qwen-tokenizer-12hz-Q4_K_M.gguf", "Qwen3-TTS 12Hz Codec (Q4_K_M)", ModelRole.CODEC, "Shared 12Hz Vocoder & Tokenizer", null, ModelQuantization.Q4_K_M, 243),
+        ModelFileSpec("qwen-tokenizer-12hz-Q8_0.gguf", "Qwen3-TTS 12Hz Codec (Q8_0)", ModelRole.CODEC, "Shared 12Hz Vocoder & Tokenizer", null, ModelQuantization.Q8_0, 278),
+        ModelFileSpec("qwen-tokenizer-12hz-BF16.gguf", "Qwen3-TTS 12Hz Codec (BF16)", ModelRole.CODEC, "Shared 12Hz Vocoder & Tokenizer", null, ModelQuantization.BF16, 342),
+        ModelFileSpec("qwen-tokenizer-12hz-F32.gguf", "Qwen3-TTS 12Hz Codec (F32)", ModelRole.CODEC, "Shared 12Hz Vocoder & Tokenizer", null, ModelQuantization.F32, 617)
+    )
+
+    private val KNOWN_SPECS: Map<String, ModelFileSpec> = ALL_MODELS.associateBy { it.fileName }
+
+    fun modelsForMode(mode: SynthesisMode): List<ModelFileSpec> {
+        val targetRole = when (mode) {
+            SynthesisMode.SPEAK -> ModelRole.SPEAK
+            SynthesisMode.CLONE -> ModelRole.CLONE
+            SynthesisMode.DESIGN -> ModelRole.DESIGN
+        }
+        return ALL_MODELS.filter { it.role == targetRole }
+    }
+
+    fun codecModels(): List<ModelFileSpec> =
+        ALL_MODELS.filter { it.role == ModelRole.CODEC }
+
+    fun inferRoleForFile(fileName: String): ModelRole =
+        KNOWN_SPECS[fileName]?.role ?: when {
+            fileName.contains("tokenizer", ignoreCase = true) -> ModelRole.CODEC
+            fileName.contains("voicedesign", ignoreCase = true) -> ModelRole.DESIGN
+            fileName.contains("base", ignoreCase = true) -> ModelRole.CLONE
+            else -> ModelRole.SPEAK
+        }
 
     fun specFor(fileName: String): ModelFileSpec =
         KNOWN_SPECS[fileName] ?: ModelFileSpec(
             fileName = fileName,
             displayTitle = fileName.removeSuffix(".gguf"),
-            roleLabel = if (fileName.contains("tokenizer", ignoreCase = true)) "Audio Codec" else "Custom GGUF",
+            role = inferRoleForFile(fileName),
+            roleLabel = if (fileName.contains("tokenizer", ignoreCase = true)) "Custom 12Hz Codec" else "Custom Qwen3-TTS GGUF",
+            sizeTier = when {
+                fileName.contains("0.6b", ignoreCase = true) -> ModelSizeTier.SIZE_06B
+                fileName.contains("1.7b", ignoreCase = true) -> ModelSizeTier.SIZE_17B
+                else -> null
+            },
+            quantization = null,
             approxSizeMb = 0
         )
 
@@ -179,18 +309,22 @@ object ModelsCatalog {
     }
 
     /**
-     * Resolves an already-installed codec file in [modelDir] if present (e.g. if BF16 codec is
-     * already downloaded, it can be shared with 0.6B presets without re-downloading Q8_0).
+     * Resolves [preferredCodecFile] if installed, or falls back to another installed 12Hz codec
+     * only when [allowInstalledFallback] is true (i.e. when no explicit custom codec override is set).
      */
-    fun resolveInstalledOrPreferredCodec(modelDir: File, preferredCodecFile: String): File {
+    fun resolveInstalledOrPreferredCodec(
+        modelDir: File,
+        preferredCodecFile: String,
+        allowInstalledFallback: Boolean = true
+    ): File {
         val exact = File(modelDir, preferredCodecFile)
-        if (isValidGgufFile(exact)) return exact
+        if (isValidGgufFile(exact) || !allowInstalledFallback) return exact
 
         val fallbacks = listOf(
+            "qwen-tokenizer-12hz-F32.gguf",
             "qwen-tokenizer-12hz-BF16.gguf",
             "qwen-tokenizer-12hz-Q8_0.gguf",
-            "qwen-tokenizer-12hz-Q4_K_M.gguf",
-            "qwen-tokenizer-12hz-F32.gguf"
+            "qwen-tokenizer-12hz-Q4_K_M.gguf"
         )
         for (name in fallbacks) {
             val f = File(modelDir, name)
@@ -200,11 +334,11 @@ object ModelsCatalog {
     }
 
     /**
-     * Finds any installed Base (clone/encoder) GGUF in [modelDir] for Voice Profile extraction,
-     * falling back to the active preset's clone model filename if none is downloaded yet.
+     * Finds the preferred Base (clone/encoder) GGUF in [modelDir] for Voice Profile extraction,
+     * falling back to any installed Base GGUF if the preferred one isn't downloaded yet.
      */
-    fun resolveBestBaseModelForProfiles(modelDir: File, preset: ModelPreset): File {
-        val preferred = File(modelDir, preset.cloneModelFile)
+    fun resolveBestBaseModelForProfiles(modelDir: File, preferredCloneFile: String): File {
+        val preferred = File(modelDir, preferredCloneFile)
         if (isValidGgufFile(preferred)) return preferred
 
         val candidates = modelDir.listFiles().orEmpty().filter {

@@ -9,14 +9,8 @@ import java.io.File
 @Serializable
 data class NativeHardwareStatus(
     val cpuAvailable: Boolean = true,
-    val gpuAvailable: Boolean = false,
-    val npuAvailable: Boolean = false,
     val cpuDesc: String = "",
-    val gpuDesc: String = "",
-    val npuDesc: String = "",
-    val hexagonArch: Int = 0,
     val activeBackend: String = "",
-    val fallbackActive: Boolean = false,
     val cpuThreads: Int = 4
 )
 
@@ -24,8 +18,6 @@ data class DeviceHardwareProfile(
     val deviceModel: String,
     val socManufacturer: String,
     val socModel: String,
-    val snapdragonMarketingName: String?,
-    val isQualcommSoc: Boolean,
     val cpuCores: Int,
     val armIsaFeatures: List<String>,
     val totalRamGb: Float,
@@ -33,19 +25,10 @@ data class DeviceHardwareProfile(
     val nativeStatus: NativeHardwareStatus
 ) {
     val summaryLine: String
-        get() = snapdragonMarketingName
-            ?: listOf(socManufacturer, socModel)
-                .filter { it.isNotBlank() && !it.equals("unknown", ignoreCase = true) }
-                .joinToString(" ")
-                .ifBlank { deviceModel }
-
-    val hexagonBadge: String?
-        get() = when {
-            nativeStatus.hexagonArch > 0 -> "Hexagon HTP v${nativeStatus.hexagonArch}"
-            nativeStatus.npuAvailable && nativeStatus.npuDesc.isNotBlank() -> nativeStatus.npuDesc
-            isQualcommSoc -> "Qualcomm Snapdragon SoC"
-            else -> null
-        }
+        get() = listOf(socManufacturer, socModel)
+            .filter { it.isNotBlank() && !it.equals("unknown", ignoreCase = true) }
+            .joinToString(" ")
+            .ifBlank { deviceModel }
 }
 
 object HardwareProbe {
@@ -53,14 +36,6 @@ object HardwareProbe {
     fun inspect(context: Context, nativeStatus: NativeHardwareStatus): DeviceHardwareProfile {
         val socMfg = Build.SOC_MANUFACTURER.orEmpty().trim()
         val socModel = Build.SOC_MODEL.orEmpty().trim()
-        val hw = Build.HARDWARE.orEmpty().trim()
-        val isQualcomm = socMfg.contains("Qualcomm", ignoreCase = true) ||
-            socModel.startsWith("SM", ignoreCase = true) ||
-            socModel.startsWith("QCS", ignoreCase = true) ||
-            socModel.startsWith("SDM", ignoreCase = true) ||
-            hw.contains("qcom", ignoreCase = true)
-
-        val marketing = resolveSnapdragonName(socModel)
         val isa = readArmIsaFeatures()
 
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
@@ -76,33 +51,12 @@ object HardwareProbe {
             deviceModel = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}".trim(),
             socManufacturer = socMfg,
             socModel = socModel,
-            snapdragonMarketingName = marketing,
-            isQualcommSoc = isQualcomm,
             cpuCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
             armIsaFeatures = isa,
             totalRamGb = totalRamGb,
             recommendLowMem = totalRamGb <= 6.5f,
             nativeStatus = nativeStatus
         )
-    }
-
-    private fun resolveSnapdragonName(socModel: String): String? {
-        val code = socModel.uppercase()
-        return when {
-            code.startsWith("SM8850") -> "Snapdragon 8 Elite Gen 5"
-            code.startsWith("SM8750") -> "Snapdragon 8 Elite"
-            code.startsWith("SM8735") -> "Snapdragon 8s Gen 4"
-            code.startsWith("SM8650") -> "Snapdragon 8 Gen 3"
-            code.startsWith("SM8635") -> "Snapdragon 8s Gen 3"
-            code.startsWith("SM8550") -> "Snapdragon 8 Gen 2"
-            code.startsWith("SM8475") -> "Snapdragon 8+ Gen 1"
-            code.startsWith("SM8450") -> "Snapdragon 8 Gen 1"
-            code.startsWith("SM7675") -> "Snapdragon 7+ Gen 3"
-            code.startsWith("SM7550") -> "Snapdragon 7 Gen 3"
-            code.startsWith("SM7475") -> "Snapdragon 7+ Gen 2"
-            code.startsWith("QCS8550") -> "Qualcomm QCS8550"
-            else -> null
-        }
     }
 
     private fun readArmIsaFeatures(): List<String> {

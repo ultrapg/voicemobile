@@ -134,15 +134,8 @@ void qwen3_tts_free(qwen3_tts_context_t* ctx) {
 }
 
 int32_t qwen3_tts_set_backend_preference(int32_t preference) {
-    qwen3_tts::backend_preference native_preference = qwen3_tts::backend_preference::auto_select;
-    if (preference == QWEN3_TTS_BACKEND_CPU) {
-        native_preference = qwen3_tts::backend_preference::cpu;
-    } else if (preference == QWEN3_TTS_BACKEND_CUDA) {
-        native_preference = qwen3_tts::backend_preference::cuda;
-    } else if (preference == QWEN3_TTS_BACKEND_NPU) {
-        native_preference = qwen3_tts::backend_preference::npu;
-    }
-    return qwen3_tts::set_backend_preference(native_preference) ? 1 : 0;
+    (void) preference;
+    return qwen3_tts::set_backend_preference(qwen3_tts::backend_preference::cpu) ? 1 : 0;
 }
 
 int32_t qwen3_tts_set_cpu_threads(int32_t n_threads) {

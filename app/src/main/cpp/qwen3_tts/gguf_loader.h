@@ -13,26 +13,19 @@
 namespace qwen3_tts {
 
 enum class backend_preference {
-    auto_select = 0, // Qualcomm Hexagon HTP NPU -> Adreno OpenCL GPU -> ARM64 CPU
+    auto_select = 0, // ARM64 CPU
     cpu = 1,         // ARM64 NEON / FP16 / DotProd / I8MM CPU
-    cuda = 2,        // GPU alias (Qualcomm Adreno OpenCL / Vulkan GPU)
-    npu = 3,         // Qualcomm Snapdragon Hexagon HTP NPU (HVX / HMX)
 };
 
 struct hardware_backend_status {
     bool cpu_available = true;
-    bool gpu_available = false;
-    bool npu_available = false;
     std::string cpu_description;
-    std::string gpu_description;
-    std::string npu_description;
     std::string active_backend_name;
     std::string active_backend_description;
-    bool fallback_active = false;
 };
 
-// Initialize and probe GGML dynamic backends (CPU, Qualcomm Hexagon HTP NPU, Qualcomm Adreno OpenCL GPU)
-void ensure_backends_registered(const std::string & native_lib_dir = "");
+// Initialize linked GGML ARM64 CPU backend
+void ensure_backends_registered();
 hardware_backend_status query_hardware_backend_status();
 
 // Cancellation support for mid-pass mobile abort
@@ -80,7 +73,7 @@ bool load_tensor_data_from_file(
     enum ggml_backend_dev_type preferred_backend_type = GGML_BACKEND_DEVICE_TYPE_CPU
 );
 
-// Helper to initialize backend with NPU/GPU/CPU preference and safe fallback
+// Helper to initialize multi-core ARM64 SIMD CPU backend
 ggml_backend_t init_preferred_backend(const char * component_name, std::string * error_msg);
 ggml_backend_t init_dedicated_preferred_backend(const char * component_name, std::string * error_msg);
 ggml_backend_t init_cpu_backend(const char * component_name, std::string * error_msg);

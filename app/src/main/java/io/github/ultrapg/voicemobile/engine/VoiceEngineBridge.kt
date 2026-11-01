@@ -14,10 +14,7 @@ interface NativeSynthCallback {
 }
 
 data class EngineRuntimeConfig(
-    val backend: AcceleratorBackend = AcceleratorBackend.AUTO,
     val cpuThreads: Int = 0, // 0 = auto optimal threads
-    val powerMode: HexagonPowerMode = HexagonPowerMode.SUSTAINED_HIGH,
-    val enableHmx: Boolean = true,
     val lowMemMode: Boolean = false
 )
 
@@ -85,9 +82,6 @@ object VoiceEngineBridge {
             }
         }
         nativeInitRuntime(
-            nativeLibDir = context.applicationInfo.nativeLibraryDir,
-            powerMode = config.powerMode.envValue,
-            enableHmx = config.enableHmx,
             lowMem = config.lowMemMode,
             cpuThreads = config.cpuThreads
         )
@@ -140,15 +134,12 @@ object VoiceEngineBridge {
         ensureInitialized(context, config)
         engineMutex.withLock {
             runCatching {
-                // Unload main pipeline first if backend config changed so encoder uses requested accelerator
+                // Unload main pipeline first if CPU config changed so encoder uses requested threads/low-mem
                 if (loadedConfig != null && loadedConfig != config) {
                     destroyActiveContextLocked()
                 }
                 nativeConfigureBackend(
-                    preference = config.backend.nativeId,
                     cpuThreads = config.cpuThreads,
-                    powerMode = config.powerMode.envValue,
-                    enableHmx = config.enableHmx,
                     lowMem = config.lowMemMode
                 )
 
@@ -210,7 +201,7 @@ object VoiceEngineBridge {
                 require(request.chunks.isNotEmpty()) { "Input text is empty" }
                 val tStartAll = System.currentTimeMillis()
 
-                onStatus("Initializing ${request.runtimeConfig.backend.title} engine…")
+                onStatus("Initializing ARM64 CPU engine…")
                 ensureModelLoadedLocked(
                     modelDir = request.modelDir,
                     talkerPath = request.talkerModelPath,
@@ -372,7 +363,7 @@ object VoiceEngineBridge {
                 val elapsedMs = (System.currentTimeMillis() - tStartAll).coerceAtLeast(1L)
                 val rtf = (elapsedMs.toFloat() / 1000f) / durationSec
                 val activeBackendLabel = nativeGetActiveBackendName().ifBlank {
-                    request.runtimeConfig.backend.title
+                    "ARM64 CPU"
                 }
 
                 SynthesisJobResult(
@@ -411,14 +402,10 @@ object VoiceEngineBridge {
             return
         }
 
-        // Destroy existing context first so shared GGML backend refcount drops to 0 before switching backend
         destroyActiveContextLocked()
 
         nativeConfigureBackend(
-            preference = config.backend.nativeId,
             cpuThreads = config.cpuThreads,
-            powerMode = config.powerMode.envValue,
-            enableHmx = config.enableHmx,
             lowMem = config.lowMemMode
         )
 
@@ -452,9 +439,6 @@ object VoiceEngineBridge {
 
     // --- JNI Bindings ---
     private external fun nativeInitRuntime(
-        nativeLibDir: String,
-        powerMode: String,
-        enableHmx: Boolean,
         lowMem: Boolean,
         cpuThreads: Int
     )
@@ -462,10 +446,7 @@ object VoiceEngineBridge {
     private external fun nativeGetHardwareStatusJson(): String
 
     private external fun nativeConfigureBackend(
-        preference: Int,
         cpuThreads: Int,
-        powerMode: String,
-        enableHmx: Boolean,
         lowMem: Boolean
     ): Boolean
 

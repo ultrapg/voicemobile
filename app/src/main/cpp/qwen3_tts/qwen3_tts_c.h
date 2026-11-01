@@ -63,8 +63,6 @@ typedef enum {
 typedef enum {
     QWEN3_TTS_BACKEND_AUTO = 0,
     QWEN3_TTS_BACKEND_CPU = 1,
-    QWEN3_TTS_BACKEND_CUDA = 2,
-    QWEN3_TTS_BACKEND_NPU = 3,
 } qwen3_tts_backend_preference_t;
 
 typedef struct {

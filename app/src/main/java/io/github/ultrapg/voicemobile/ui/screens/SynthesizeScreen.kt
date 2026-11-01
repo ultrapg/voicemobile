@@ -23,13 +23,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Pause
@@ -80,9 +80,10 @@ import io.github.ultrapg.voicemobile.audio.PreparedReferenceAudio
 import io.github.ultrapg.voicemobile.data.AppSettings
 import io.github.ultrapg.voicemobile.data.DownloadProgress
 import io.github.ultrapg.voicemobile.data.GeneratedClipItem
+import io.github.ultrapg.voicemobile.data.ModelQuantization
+import io.github.ultrapg.voicemobile.data.ModelSizeTier
 import io.github.ultrapg.voicemobile.data.ModelsCatalog
 import io.github.ultrapg.voicemobile.data.VoiceProfileItem
-import io.github.ultrapg.voicemobile.engine.AcceleratorBackend
 import io.github.ultrapg.voicemobile.engine.DeviceHardwareProfile
 import io.github.ultrapg.voicemobile.engine.SynthesisMode
 import io.github.ultrapg.voicemobile.engine.TextProcessor
@@ -90,6 +91,7 @@ import io.github.ultrapg.voicemobile.ui.ActiveSynthesisState
 import io.github.ultrapg.voicemobile.ui.CloneSourceKind
 import io.github.ultrapg.voicemobile.ui.StudioDraftState
 import io.github.ultrapg.voicemobile.ui.components.MicRecordSheet
+import io.github.ultrapg.voicemobile.ui.components.ModelSelectorSheet
 import io.github.ultrapg.voicemobile.ui.components.TuningBottomSheet
 import io.github.ultrapg.voicemobile.ui.components.WaveformPlayerBar
 import java.io.File
@@ -102,6 +104,7 @@ fun SynthesizeScreen(
     draft: StudioDraftState,
     synthState: ActiveSynthesisState,
     hardwareProfile: DeviceHardwareProfile,
+    installedModels: List<File>,
     availableSpeakers: List<String>,
     profiles: List<VoiceProfileItem>,
     missingModels: List<String>,
@@ -113,6 +116,10 @@ fun SynthesizeScreen(
     micState: MicRecordingState,
     tempRefDir: File,
     onSelectMode: (SynthesisMode) -> Unit,
+    onSelectSizeTier: (ModelSizeTier) -> Unit,
+    onSelectQuantization: (ModelQuantization) -> Unit,
+    onAssignCustomModel: (String, String) -> Unit,
+    onClearModelOverrides: () -> Unit,
     onUpdateInputText: (String) -> Unit,
     onImportTextDoc: (Uri, Boolean) -> Unit,
     onSelectSpeaker: (String) -> Unit,
@@ -144,6 +151,7 @@ fun SynthesizeScreen(
     val clipboard = LocalClipboardManager.current
     var showTuningSheet by remember { mutableStateOf(false) }
     var showMicSheet by remember { mutableStateOf(false) }
+    var showModelSheet by remember { mutableStateOf(false) }
 
     val textFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -198,7 +206,7 @@ fun SynthesizeScreen(
                     style = MaterialTheme.typography.headlineMedium
                 )
                 Text(
-                    text = "On-device Qwen3-TTS Studio",
+                    text = "On-device Qwen3-TTS · ARM64 CPU",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -208,8 +216,8 @@ fun SynthesizeScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                ComputeStatusPill(
-                    backend = settings.backend,
+                CpuStatusPill(
+                    cpuThreads = settings.cpuThreads,
                     hardwareProfile = hardwareProfile,
                     onClick = onNavigateToEngine
                 )
@@ -241,6 +249,50 @@ fun SynthesizeScreen(
                     Text(mode.label)
                 }
             }
+        }
+
+        // Compact Qwen3-TTS Model Bar: 1-tap 0.6B vs 1.7B + Quantization / GGUF Picker
+        val activeTalkerSpec = remember(settings) {
+            ModelsCatalog.specFor(settings.effectiveTalkerFileName(settings.activeMode))
+        }
+        val activeTierForChips = if (settings.activeMode == SynthesisMode.DESIGN && !settings.hasCustomModelOverrides) {
+            settings.preset.sizeTier
+        } else {
+            activeTalkerSpec.sizeTier ?: settings.preset.sizeTier
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ModelSizeTier.entries.forEach { tier ->
+                    FilterChip(
+                        selected = activeTierForChips == tier,
+                        onClick = { onSelectSizeTier(tier) },
+                        label = { Text("Qwen3 ${tier.shortLabel}") }
+                    )
+                }
+            }
+
+            AssistChip(
+                onClick = { showModelSheet = true },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Layers,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                label = {
+                    val quantBadge = activeTalkerSpec.quantization?.shortTag
+                        ?: settings.preset.quantization.shortTag
+                    Text("$quantBadge · Models")
+                }
+            )
         }
 
         // Clean Text Input Card
@@ -406,8 +458,8 @@ fun SynthesizeScreen(
                 label = { Text("Live Stream") }
             )
             AssistChip(
-                onClick = onNavigateToEngine,
-                label = { Text(settings.preset.badge) }
+                onClick = { showModelSheet = true },
+                label = { Text(settings.activeModelSummaryChip()) }
             )
         }
 
@@ -500,6 +552,19 @@ fun SynthesizeScreen(
         Spacer(Modifier.height(12.dp))
     }
 
+    if (showModelSheet) {
+        ModelSelectorSheet(
+            settings = settings,
+            installedModels = installedModels,
+            onSelectSizeTier = onSelectSizeTier,
+            onSelectQuantization = onSelectQuantization,
+            onAssignCustomModel = onAssignCustomModel,
+            onClearModelOverrides = onClearModelOverrides,
+            onOpenFullCatalog = onNavigateToEngine,
+            onDismiss = { showModelSheet = false }
+        )
+    }
+
     if (showTuningSheet) {
         TuningBottomSheet(
             settings = settings,
@@ -521,20 +586,16 @@ fun SynthesizeScreen(
 }
 
 @Composable
-private fun ComputeStatusPill(
-    backend: AcceleratorBackend,
+private fun CpuStatusPill(
+    cpuThreads: Int,
     hardwareProfile: DeviceHardwareProfile,
     onClick: () -> Unit
 ) {
-    val activeTag = when (backend) {
-        AcceleratorBackend.AUTO -> when {
-            hardwareProfile.nativeStatus.npuAvailable -> "Auto · NPU"
-            hardwareProfile.nativeStatus.gpuAvailable -> "Auto · GPU"
-            else -> "Auto · CPU"
-        }
-        AcceleratorBackend.NPU -> "Hexagon NPU"
-        AcceleratorBackend.GPU -> "OpenCL GPU"
-        AcceleratorBackend.CPU -> "ARM64 CPU"
+    val activeThreads = if (cpuThreads > 0) cpuThreads else hardwareProfile.nativeStatus.cpuThreads
+    val activeTag = if (cpuThreads == 0) {
+        "CPU · ${activeThreads}T Auto"
+    } else {
+        "CPU · ${cpuThreads}T"
     }
 
     Surface(
@@ -547,11 +608,7 @@ private fun ComputeStatusPill(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = if (backend == AcceleratorBackend.NPU || hardwareProfile.nativeStatus.npuAvailable) {
-                    Icons.Rounded.Bolt
-                } else {
-                    Icons.Rounded.Memory
-                },
+                imageVector = Icons.Rounded.Memory,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(15.dp)
